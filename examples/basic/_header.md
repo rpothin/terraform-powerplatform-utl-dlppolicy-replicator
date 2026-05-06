@@ -1,3 +1,4 @@
-# Basic Example
+﻿# Basic Example
 
-This example demonstrates the minimal configuration required to use this module.
+Minimal configuration to replicate an existing DLP policy into a `.tfvars` file.
+Only `source_policy_name` is required.

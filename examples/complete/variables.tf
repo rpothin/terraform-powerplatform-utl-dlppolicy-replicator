@@ -1,21 +1,17 @@
-variable "name" {
-  description = "The name of the resource."
+variable "source_policy_name" {
+  description = "Display name of the DLP policy to replicate."
   type        = string
-  default     = "example-complete"
+  default     = "My DLP Policy"
 }
 
-variable "location" {
-  description = "The geographic location for the resource."
+variable "output_file" {
+  description = "Path to write the generated .tfvars file."
   type        = string
-  default     = "unitedstates"
+  default     = "replicated-dlp-policy.tfvars"
 }
 
-variable "tags" {
-  description = "A map of tags to apply to the resource."
-  type        = map(string)
-  default = {
-    environment = "development"
-    project     = "power-platform-module"
-    managed_by  = "terraform"
-  }
+variable "preserve_connector_rules" {
+  description = "When true, preserves action_rules and endpoint_rules from the source policy."
+  type        = bool
+  default     = false
 }

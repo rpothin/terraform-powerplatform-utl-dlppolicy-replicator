@@ -1,12 +1,7 @@
-# TODO (before publishing): Replace the source path below with the Terraform Registry
-# address once the module is published, e.g.:
-#   source  = "rpothin/<module-name>/powerplatform"
-#   version = "~> 0.1"
-# See: https://developer.hashicorp.com/terraform/language/modules/develop/structure#examples
-module "this" {
-  source = "../../" # local path for development — update to registry address before publishing
+module "dlp_replicator" {
+  source = "../../"
 
-  name     = var.name
-  location = var.location
-  tags     = var.tags
+  source_policy_name       = var.source_policy_name
+  output_file              = var.output_file
+  preserve_connector_rules = var.preserve_connector_rules
 }
