@@ -34,7 +34,7 @@ content: |-
 output:
   file: README.md
   mode: replace
-  template: |-
+  template: |
     <!-- BEGIN_TF_DOCS -->
     {{ .Content }}
     <!-- END_TF_DOCS -->

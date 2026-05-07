@@ -1,27 +1,29 @@
-variable "name" {
-  description = "The name of the resource. Used as a display name or identifier."
+variable "source_policy_name" {
+  description = "Display name of the existing DLP policy to replicate. Must match exactly one policy in the tenant."
   type        = string
+  nullable    = false
 
   validation {
-    condition     = length(var.name) > 0 && length(var.name) <= 256
-    error_message = "Name must be between 1 and 256 characters."
+    condition     = length(var.source_policy_name) >= 1 && length(var.source_policy_name) <= 256
+    error_message = "source_policy_name must be between 1 and 256 characters."
   }
 }
 
-variable "location" {
-  description = "The geographic location for the resource (e.g., 'unitedstates', 'europe', 'asia')."
+variable "output_file" {
+  description = "Path to write the generated .tfvars file (relative to the Terraform working directory). Must end with .tfvars extension."
   type        = string
+  default     = "replicated-dlp-policy.tfvars"
+  nullable    = false
 
-  # TODO: Update this list when Microsoft adds new Power Platform regions,
-  # or replace with a data source lookup / more lenient validation for your module.
   validation {
-    condition     = contains(["unitedstates", "europe", "asia", "australia", "japan", "india", "canada", "southamerica", "unitedkingdom", "france", "germany", "switzerland", "norway", "korea", "southafrica", "uae", "singapore"], var.location)
-    error_message = "Location must be a valid Power Platform region."
+    condition     = endswith(var.output_file, ".tfvars")
+    error_message = "output_file must end with the .tfvars extension."
   }
 }
 
-variable "tags" {
-  description = "A map of tags to apply to the resource."
-  type        = map(string)
-  default     = {}
+variable "preserve_connector_rules" {
+  description = "When true, preserves action_rules and endpoint_rules from the source policy's business connectors. When false (default), rules are stripped for simpler onboarding."
+  type        = bool
+  default     = false
+  nullable    = false
 }

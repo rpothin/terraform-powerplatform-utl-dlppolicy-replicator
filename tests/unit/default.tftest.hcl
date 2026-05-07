@@ -1,88 +1,372 @@
-# Unit tests — uses mock provider, no credentials required.
+# Unit tests — uses mock providers, no credentials required.
+# Mock data structures are derived from the real provider schema (microsoft/power-platform ~> 4.0).
+#
+# MOCK LIMITATION:
+# The `powerplatform_data_loss_prevention_policies` and `powerplatform_connectors` data sources
+# use `nested_type` attributes with `nesting_mode: list`. Terraform's mock provider framework
+# (v1.14.x) cannot populate these attributes via override_data or mock_data defaults — any attempt
+# to supply list literals results in "incompatible types; expected object type, found tuple" errors,
+# and object literals are silently ignored. The mock auto-generates empty lists.
+#
+# Consequence: unit tests can only exercise the "policy not found" / empty-data code paths and
+# variable validation.  All positive-path logic (policy found, connector reclassification,
+# wildcard stripping, environment normalisation) is covered by tests/integration/default.tftest.hcl.
 
 mock_provider "powerplatform" {}
 
-run "validates_name_variable" {
+mock_provider "local" {}
+
+###############################################################################
+# Test 1: Policy not found when mock returns empty policies list
+###############################################################################
+run "policy_not_found_with_mock_empty_policies" {
   command = plan
 
   variables {
-    name     = "test-module"
-    location = "unitedstates"
+    source_policy_name = "My DLP Policy"
   }
 
   assert {
-    condition     = var.name == "test-module"
-    error_message = "Variable 'name' was not set correctly."
+    condition     = output.policy_found == false
+    error_message = "policy_found should be false when the mock provider returns an empty policies list."
   }
 }
 
-run "validates_location_variable" {
+###############################################################################
+# Test 2: tfvars_file_path is null when policy not found
+###############################################################################
+run "tfvars_file_path_null_when_policy_not_found" {
   command = plan
 
   variables {
-    name     = "test-module"
-    location = "europe"
+    source_policy_name = "Nonexistent Policy Name"
   }
 
   assert {
-    condition     = var.location == "europe"
-    error_message = "Variable 'location' was not set correctly."
+    condition     = output.tfvars_file_path == null
+    error_message = "tfvars_file_path should be null when the policy is not found."
   }
 }
 
-run "outputs_name_value" {
+###############################################################################
+# Test 3: generated_tfvars_content is empty when policy not found
+###############################################################################
+run "generated_tfvars_content_empty_when_policy_not_found" {
   command = plan
 
   variables {
-    name     = "test-output"
-    location = "unitedstates"
+    source_policy_name = "Some Policy"
   }
 
   assert {
-    condition     = output.name == "test-output"
-    error_message = "Output 'name' should match the input variable."
+    condition     = output.generated_tfvars_content == ""
+    error_message = "generated_tfvars_content should be an empty string when the policy is not found."
   }
 }
 
-run "rejects_empty_name" {
+###############################################################################
+# Test 4: non_business_connectors never appears in tfvars content
+###############################################################################
+run "non_business_connectors_not_in_tfvars" {
   command = plan
 
   variables {
-    name     = ""
-    location = "unitedstates"
+    source_policy_name = "Some Policy"
+  }
+
+  assert {
+    condition     = !strcontains(output.generated_tfvars_content, "non_business_connectors")
+    error_message = "Generated tfvars content must never contain 'non_business_connectors' (unsupported by res-dlppolicy)."
+  }
+}
+
+###############################################################################
+# Test 5: blocked_connectors never appears in tfvars content
+###############################################################################
+run "blocked_connectors_not_in_tfvars" {
+  command = plan
+
+  variables {
+    source_policy_name = "Some Policy"
+  }
+
+  assert {
+    condition     = !strcontains(output.generated_tfvars_content, "blocked_connectors =")
+    error_message = "Generated tfvars content must never contain 'blocked_connectors =' (unsupported by res-dlppolicy)."
+  }
+}
+
+###############################################################################
+# Test 6: connectors_reclassified_to_blocked is empty when policy not found
+###############################################################################
+run "connectors_reclassified_to_blocked_empty_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Some Policy"
+  }
+
+  assert {
+    condition     = length(output.connectors_reclassified_to_blocked) == 0
+    error_message = "connectors_reclassified_to_blocked should be empty when no policy is found."
+  }
+}
+
+###############################################################################
+# Test 7: business_connectors output is empty list when policy not found
+###############################################################################
+run "business_connectors_empty_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Some Policy"
+  }
+
+  assert {
+    condition     = output.business_connectors == []
+    error_message = "business_connectors should be an empty list when policy is not found."
+  }
+}
+
+###############################################################################
+# Test 8: environments output is empty list when policy not found
+###############################################################################
+run "environments_empty_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Some Policy"
+  }
+
+  assert {
+    condition     = output.environments == []
+    error_message = "environments should be an empty list when policy is not found."
+  }
+}
+
+###############################################################################
+# Test 9: custom_connectors_patterns output is empty list when policy not found
+###############################################################################
+run "custom_connectors_patterns_empty_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Some Policy"
+  }
+
+  assert {
+    condition     = output.custom_connectors_patterns == []
+    error_message = "custom_connectors_patterns should be an empty list when policy is not found."
+  }
+}
+
+###############################################################################
+# Test 10: preserve_connector_rules default is false
+###############################################################################
+run "preserve_connector_rules_defaults_to_false" {
+  command = plan
+
+  variables {
+    source_policy_name = "Some Policy"
+  }
+
+  assert {
+    condition     = var.preserve_connector_rules == false
+    error_message = "preserve_connector_rules should default to false."
+  }
+}
+
+###############################################################################
+# Test 11: migration_summary reflects correct metadata when policy not found
+###############################################################################
+run "migration_summary_correct_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Audit Policy"
+  }
+
+  assert {
+    condition     = output.migration_summary.policy_found == false
+    error_message = "migration_summary.policy_found should be false when policy is not found."
+  }
+
+  assert {
+    condition     = output.migration_summary.source_policy_name == "Audit Policy"
+    error_message = "migration_summary.source_policy_name should match the input variable."
+  }
+
+  assert {
+    condition     = output.migration_summary.business_connector_count == 0
+    error_message = "migration_summary.business_connector_count should be 0 when policy is not found."
+  }
+
+  assert {
+    condition     = output.migration_summary.reclassified_connector_count == 0
+    error_message = "migration_summary.reclassified_connector_count should be 0 when policy is not found."
+  }
+}
+
+###############################################################################
+# Test 12: Rejects empty source_policy_name (< 1 char)
+###############################################################################
+run "rejects_empty_source_policy_name" {
+  command = plan
+
+  variables {
+    source_policy_name = ""
   }
 
   expect_failures = [
-    var.name,
+    var.source_policy_name,
   ]
 }
 
-run "rejects_invalid_location" {
+###############################################################################
+# Test 13: Rejects source_policy_name exceeding 256 characters
+###############################################################################
+run "rejects_source_policy_name_too_long" {
   command = plan
 
   variables {
-    name     = "test-module"
-    location = "invalid-location"
+    source_policy_name = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
 
   expect_failures = [
-    var.location,
+    var.source_policy_name,
   ]
 }
 
-run "accepts_optional_tags" {
+###############################################################################
+# Test 14: Rejects output_file without .tfvars extension
+###############################################################################
+run "rejects_non_tfvars_extension" {
   command = plan
 
   variables {
-    name     = "test-module"
-    location = "unitedstates"
-    tags = {
-      environment = "test"
-    }
+    source_policy_name = "My DLP Policy"
+    output_file        = "output.txt"
+  }
+
+  expect_failures = [
+    var.output_file,
+  ]
+}
+
+###############################################################################
+# Test 15: Accepts .tfvars extension in output_file
+###############################################################################
+run "accepts_valid_tfvars_extension" {
+  command = plan
+
+  variables {
+    source_policy_name = "My DLP Policy"
+    output_file        = "custom-output.tfvars"
   }
 
   assert {
-    condition     = var.tags["environment"] == "test"
-    error_message = "Tags should be accepted as optional input."
+    condition     = var.output_file == "custom-output.tfvars"
+    error_message = "output_file with .tfvars extension should be accepted."
+  }
+}
+
+###############################################################################
+# Test 16: output_file defaults to replicated-dlp-policy.tfvars
+###############################################################################
+run "output_file_default_value" {
+  command = plan
+
+  variables {
+    source_policy_name = "My DLP Policy"
+  }
+
+  assert {
+    condition     = var.output_file == "replicated-dlp-policy.tfvars"
+    error_message = "output_file should default to 'replicated-dlp-policy.tfvars'."
+  }
+}
+
+###############################################################################
+# Tests 17–20: Additional output-null guards and variable reflection tests
+#
+# MOCK FRAMEWORK LIMITATION (Terraform v1.14.x):
+# The nested_type attributes with nesting_mode:list (policies, connectors) and
+# nesting_mode:set (business_connectors, etc.) cannot be populated through
+# override_data or mock_data defaults — any tuple literal produces
+# "incompatible types; expected object type, found tuple" and tolist/toset
+# coercions are not evaluated before the type check. The mock auto-generates
+# empty lists, so all tests below verify module behaviour with empty nested
+# collections (policy not found / no connectors), which is equivalent to a
+# policy that exists with no connectors or environments.
+#
+# Positive-path transformation logic (connector projection, wildcard stripping,
+# environment normalisation, reclassification detection) is covered by
+# tests/integration/default.tftest.hcl using real provider calls.
+###############################################################################
+
+###############################################################################
+# Test 17: display_name output is the matched policy name when policy found
+#          (mock always returns empty policies, so policy_found == false;
+#           verifies null guard on display_name output)
+###############################################################################
+run "display_name_null_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Any Policy"
+  }
+
+  assert {
+    condition     = output.display_name == null
+    error_message = "display_name should be null when no policy is found."
+  }
+}
+
+###############################################################################
+# Test 18: migration_summary.preserve_connector_rules reflects the variable
+###############################################################################
+run "migration_summary_reflects_preserve_connector_rules_true" {
+  command = plan
+
+  variables {
+    source_policy_name       = "Any Policy"
+    preserve_connector_rules = true
+  }
+
+  assert {
+    condition     = output.migration_summary.preserve_connector_rules == true
+    error_message = "migration_summary.preserve_connector_rules should be true when the variable is set to true."
+  }
+}
+
+###############################################################################
+# Test 19: environment_type output is null when policy not found
+###############################################################################
+run "environment_type_null_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Any Policy"
+  }
+
+  assert {
+    condition     = output.environment_type == null
+    error_message = "environment_type should be null when no policy is found."
+  }
+}
+
+###############################################################################
+# Test 20: default_connectors_classification output is null when policy not found
+###############################################################################
+run "default_connectors_classification_null_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Any Policy"
+  }
+
+  assert {
+    condition     = output.default_connectors_classification == null
+    error_message = "default_connectors_classification should be null when no policy is found."
   }
 }

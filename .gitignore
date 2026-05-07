@@ -16,7 +16,6 @@ terraform.rc
 
 # Terraform lockfile — each derived repo should generate its own lockfile
 # for its platform. Remove this line if you want to commit the lockfile.
-.terraform.lock.hcl
 
 # IDE
 .idea/

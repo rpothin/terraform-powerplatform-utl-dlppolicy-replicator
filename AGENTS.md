@@ -1,6 +1,6 @@
 # Power Platform Terraform Module Agent Guide
 
-This repository is a **Terraform module** for Power Platform, following AVM-aligned conventions. This is a template repository — `main.tf` contains placeholder comments, not real resources.
+This repository is a **Terraform module** for Power Platform, following AVM-aligned conventions. The `utl-dlppolicy-replicator` module reads an existing DLP policy from the tenant and writes a ready-to-use `.tfvars` file for the companion `res-dlppolicy` module.
 
 ## Tech Stack
 
