@@ -1,4 +1,4 @@
-﻿## Authentication
+## Authentication
 
 Configure OIDC authentication via environment variables before running this module:
 

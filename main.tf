@@ -12,6 +12,6 @@ resource "local_file" "generated_tfvars" {
 check "no_blockable_connectors_in_non_business" {
   assert {
     condition     = length(local.connectors_reclassified_to_blocked) == 0
-    error_message = "Warning: ${length(local.connectors_reclassified_to_blocked)} connector(s) in the source policy's NonBusiness group are blockable and will be reclassified to Blocked by res-dlppolicy. Review the 'connectors_reclassified_to_blocked' output before applying the generated tfvars. Affected connector IDs: ${jsonencode(local.connectors_reclassified_to_blocked)}"
+    error_message = "${length(local.connectors_reclassified_to_blocked)} connector(s) in the source policy's NonBusiness group are blockable and will be reclassified to Blocked by res-dlppolicy. Review the 'connectors_reclassified_to_blocked' output before applying the generated tfvars. Affected connector IDs: ${jsonencode(local.connectors_reclassified_to_blocked)}"
   }
 }

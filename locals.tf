@@ -24,20 +24,31 @@ locals {
   ] : []
 
   # Business connectors, optionally stripping action_rules and endpoint_rules.
+  # Fields are projected explicitly to avoid passing extra provider attributes that
+  # res-dlppolicy's strict object type would reject.
   business_connectors = local.policy_exists ? [
     for c in local.selected_policy.business_connectors : {
       id                           = c.id
       default_action_rule_behavior = c.default_action_rule_behavior
-      action_rules                 = var.preserve_connector_rules ? c.action_rules : []
-      endpoint_rules               = var.preserve_connector_rules ? c.endpoint_rules : []
+      action_rules = var.preserve_connector_rules ? [
+        for r in c.action_rules : { action_id = r.action_id, behavior = r.behavior }
+      ] : []
+      endpoint_rules = var.preserve_connector_rules ? [
+        for r in c.endpoint_rules : { order = r.order, endpoint = r.endpoint, behavior = r.behavior }
+      ] : []
     }
   ] : []
 
   # Custom connector patterns with wildcard host_url_pattern removed.
   # res-dlppolicy appends host_url_pattern = "*" automatically; its validation rejects it as user input.
+  # Fields projected explicitly — res-dlppolicy expects exactly {order, host_url_pattern, data_group}.
   custom_connectors_patterns = local.policy_exists ? [
-    for p in local.selected_policy.custom_connectors_patterns :
-    p if p.host_url_pattern != "*"
+    for p in local.selected_policy.custom_connectors_patterns : {
+      order            = p.order
+      host_url_pattern = p.host_url_pattern
+      data_group       = p.data_group
+    }
+    if p.host_url_pattern != "*"
   ] : []
 
   # Environment IDs normalised to lowercase and sorted.

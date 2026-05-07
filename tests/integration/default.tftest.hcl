@@ -40,7 +40,8 @@ run "replicates_existing_policy" {
 }
 
 run "missing_policy_does_not_fail" {
-  command = apply
+  # Use plan — no resources to create, so apply is an unnecessary live API round-trip.
+  command = plan
 
   variables {
     source_policy_name = "tftest-nonexistent-policy-that-should-not-exist"

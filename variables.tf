@@ -10,7 +10,7 @@ variable "source_policy_name" {
 }
 
 variable "output_file" {
-  description = "Path to write the generated .tfvars file. Must end with .tfvars extension."
+  description = "Path to write the generated .tfvars file (relative to the Terraform working directory). Must end with .tfvars extension."
   type        = string
   default     = "replicated-dlp-policy.tfvars"
   nullable    = false

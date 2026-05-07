@@ -285,3 +285,88 @@ run "output_file_default_value" {
     error_message = "output_file should default to 'replicated-dlp-policy.tfvars'."
   }
 }
+
+###############################################################################
+# Tests 17–20: Additional output-null guards and variable reflection tests
+#
+# MOCK FRAMEWORK LIMITATION (Terraform v1.14.x):
+# The nested_type attributes with nesting_mode:list (policies, connectors) and
+# nesting_mode:set (business_connectors, etc.) cannot be populated through
+# override_data or mock_data defaults — any tuple literal produces
+# "incompatible types; expected object type, found tuple" and tolist/toset
+# coercions are not evaluated before the type check. The mock auto-generates
+# empty lists, so all tests below verify module behaviour with empty nested
+# collections (policy not found / no connectors), which is equivalent to a
+# policy that exists with no connectors or environments.
+#
+# Positive-path transformation logic (connector projection, wildcard stripping,
+# environment normalisation, reclassification detection) is covered by
+# tests/integration/default.tftest.hcl using real provider calls.
+###############################################################################
+
+###############################################################################
+# Test 17: display_name output is the matched policy name when policy found
+#          (mock always returns empty policies, so policy_found == false;
+#           verifies null guard on display_name output)
+###############################################################################
+run "display_name_null_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Any Policy"
+  }
+
+  assert {
+    condition     = output.display_name == null
+    error_message = "display_name should be null when no policy is found."
+  }
+}
+
+###############################################################################
+# Test 18: migration_summary.preserve_connector_rules reflects the variable
+###############################################################################
+run "migration_summary_reflects_preserve_connector_rules_true" {
+  command = plan
+
+  variables {
+    source_policy_name       = "Any Policy"
+    preserve_connector_rules = true
+  }
+
+  assert {
+    condition     = output.migration_summary.preserve_connector_rules == true
+    error_message = "migration_summary.preserve_connector_rules should be true when the variable is set to true."
+  }
+}
+
+###############################################################################
+# Test 19: environment_type output is null when policy not found
+###############################################################################
+run "environment_type_null_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Any Policy"
+  }
+
+  assert {
+    condition     = output.environment_type == null
+    error_message = "environment_type should be null when no policy is found."
+  }
+}
+
+###############################################################################
+# Test 20: default_connectors_classification output is null when policy not found
+###############################################################################
+run "default_connectors_classification_null_when_policy_not_found" {
+  command = plan
+
+  variables {
+    source_policy_name = "Any Policy"
+  }
+
+  assert {
+    condition     = output.default_connectors_classification == null
+    error_message = "default_connectors_classification should be null when no policy is found."
+  }
+}
