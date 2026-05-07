@@ -37,6 +37,11 @@ run "replicates_existing_policy" {
     condition     = !strcontains(output.generated_tfvars_content, "blocked_connectors =")
     error_message = "Generated tfvars must not contain blocked_connectors (unsupported by res-dlppolicy)."
   }
+
+  assert {
+    condition     = !contains([for p in output.custom_connectors_patterns : p.host_url_pattern], "*")
+    error_message = "Wildcard '*' custom connector pattern must be stripped from custom_connectors_patterns."
+  }
 }
 
 run "missing_policy_does_not_fail" {

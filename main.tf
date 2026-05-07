@@ -5,8 +5,9 @@ data "powerplatform_connectors" "all" {}
 resource "local_file" "generated_tfvars" {
   count = local.policy_exists ? 1 : 0
 
-  content  = local.tfvars_content
-  filename = var.output_file
+  content         = local.tfvars_content
+  filename        = var.output_file
+  file_permission = "0644"
 }
 
 check "no_blockable_connectors_in_non_business" {

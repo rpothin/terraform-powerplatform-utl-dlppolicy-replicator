@@ -58,8 +58,9 @@ locals {
 
   # Environment IDs normalised to lowercase and sorted.
   # The environments attribute is a set of strings (environment IDs), not objects.
+  # coalesce guards against a future provider version returning null instead of empty set.
   environments_normalised = local.policy_exists ? sort([
-    for e in local.selected_policy.environments : lower(e)
+    for e in coalesce(local.selected_policy.environments, []) : lower(e)
   ]) : []
 
   # Generated .tfvars content with exactly the 6 res-dlppolicy variables.
