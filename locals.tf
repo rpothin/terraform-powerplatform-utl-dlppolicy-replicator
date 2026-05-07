@@ -18,16 +18,18 @@ locals {
   # Blockable connectors in the source NonBusiness group.
   # res-dlppolicy auto-computes the NonBusiness group from the connector catalog,
   # reclassifying blockable connectors that are currently in NonBusiness to Blocked.
+  # coalesce guards against a future provider version returning null instead of empty set.
   connectors_reclassified_to_blocked = local.policy_exists ? [
-    for c in local.selected_policy.non_business_connectors :
+    for c in coalesce(local.selected_policy.non_business_connectors, []) :
     c.id if !lookup(local.connector_unblockable_map, c.id, true)
   ] : []
 
   # Business connectors, optionally stripping action_rules and endpoint_rules.
   # Fields are projected explicitly to avoid passing extra provider attributes that
   # res-dlppolicy's strict object type would reject.
+  # coalesce guards against a future provider version returning null instead of empty set.
   business_connectors = local.policy_exists ? [
-    for c in local.selected_policy.business_connectors : {
+    for c in coalesce(local.selected_policy.business_connectors, []) : {
       id                           = c.id
       default_action_rule_behavior = c.default_action_rule_behavior
       action_rules = var.preserve_connector_rules ? [
@@ -42,8 +44,11 @@ locals {
   # Custom connector patterns with wildcard host_url_pattern removed.
   # res-dlppolicy appends host_url_pattern = "*" automatically; its validation rejects it as user input.
   # Fields projected explicitly — res-dlppolicy expects exactly {order, host_url_pattern, data_group}.
+  # data_group provider values ("Business", "NonBusiness", "Blocked", "Ignore") verified to match
+  # res-dlppolicy's accepted values via `terraform providers schema -json`.
+  # coalesce guards against a future provider version returning null instead of empty set.
   custom_connectors_patterns = local.policy_exists ? [
-    for p in local.selected_policy.custom_connectors_patterns : {
+    for p in coalesce(local.selected_policy.custom_connectors_patterns, []) : {
       order            = p.order
       host_url_pattern = p.host_url_pattern
       data_group       = p.data_group

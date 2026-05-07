@@ -14,7 +14,7 @@ output "environments" {
 }
 
 output "default_connectors_classification" {
-  description = "Default classification for connectors not explicitly listed (Business or NonBusiness)."
+  description = "Default classification for connectors not explicitly listed in the source policy. Provider values are 'General', 'Confidential', or 'Blocked'."
   value       = local.policy_exists ? local.selected_policy.default_connectors_classification : null
 }
 

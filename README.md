@@ -98,7 +98,7 @@ Description: Custom connector URL patterns from the source policy (wildcard patt
 
 ### <a name="output_default_connectors_classification"></a> [default\_connectors\_classification](#output\_default\_connectors\_classification)
 
-Description: Default classification for connectors not explicitly listed (Business or NonBusiness).
+Description: Default classification for connectors not explicitly listed in the source policy. Provider values are 'General', 'Confidential', or 'Blocked'.
 
 ### <a name="output_display_name"></a> [display\_name](#output\_display\_name)
 
