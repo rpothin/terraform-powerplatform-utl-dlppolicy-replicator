@@ -61,7 +61,7 @@ The following Modules are called:
 
 ### <a name="module_dlp_replicator"></a> [dlp\_replicator](#module\_dlp\_replicator)
 
-Source: ../../
+Source: rpothin/utl-dlppolicy-replicator/powerplatform
 
 Version:
 
