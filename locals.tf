@@ -1,4 +1,5 @@
 locals {
+  # The provider catalog may contain repeated connector IDs; keep ID-based handling in mind.
   # Map connector ID -> unblockable bool for every connector in the catalog.
   # unblockable = true means the connector CANNOT be placed in the Blocked tier.
   connector_unblockable_map = {
