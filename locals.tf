@@ -1,10 +1,13 @@
 locals {
-  # Map connector ID -> unblockable bool for every connector in the catalog.
-  # unblockable = true means the connector CANNOT be placed in the Blocked tier.
-  connector_unblockable_map = {
-    for c in data.powerplatform_connectors.all.connectors :
-    c.id => c.unblockable
-  }
+  # Canonicalize provider connector IDs before deriving DLP classifications.
+  # A connector is unblockable if any duplicate provider record marks it as unblockable.
+  all_connector_ids = toset([
+    for c in data.powerplatform_connectors.all.connectors : c.id
+  ])
+  unblockable_connector_ids = toset([
+    for c in data.powerplatform_connectors.all.connectors : c.id if c.unblockable
+  ])
+  blockable_connector_ids = setsubtract(local.all_connector_ids, local.unblockable_connector_ids)
 
   # Find the target policy by exact display_name match.
   # one() returns null if no match, and errors if more than one policy shares the same name.
@@ -21,7 +24,7 @@ locals {
   # coalesce guards against a future provider version returning null instead of empty set.
   connectors_reclassified_to_blocked = local.policy_exists ? [
     for c in coalesce(local.selected_policy.non_business_connectors, []) :
-    c.id if !lookup(local.connector_unblockable_map, c.id, true)
+    c.id if contains(local.blockable_connector_ids, c.id)
   ] : []
 
   # Business connectors, optionally stripping action_rules and endpoint_rules.

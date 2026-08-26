@@ -7,6 +7,8 @@ Reads an existing Power Platform DLP policy from a live tenant and generates a `
 
 Use this module once to migrate an admin-center-managed DLP policy into Terraform governance via `res-dlppolicy`.
 
+The provider connector catalog is canonicalized by connector ID before classification, so duplicate records from overlapping metadata endpoints do not cause Terraform duplicate-key failures. When duplicate records disagree, an ID is treated as unblockable if any record marks it as unblockable.
+
 > **Tip:** Add the generated `.tfvars` file to your `.gitignore` — it contains environment IDs and connector configurations that vary by tenant.
 
 ## Prerequisites

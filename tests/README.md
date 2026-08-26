@@ -30,9 +30,10 @@ terraform test -test-directory=tests/unit
 Integration tests create real resources and require OIDC authentication:
 
 ```bash
-export ARM_USE_OIDC=true
+export POWER_PLATFORM_USE_OIDC=true
 export POWER_PLATFORM_TENANT_ID=<your-tenant-id>
 export POWER_PLATFORM_CLIENT_ID=<your-client-id>
+export TF_VAR_source_policy_name=<existing-policy-display-name>
 
 terraform init -backend=false
 terraform test -test-directory=tests/integration
