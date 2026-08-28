@@ -83,32 +83,32 @@ run "batch_found_policy_produces_result" {
   }
 
   assert {
-    condition     = output.batch_results[var.source_policy_name].status == "found"
+    condition     = output.batch_results[keys(output.batch_results)[0]].status == "found"
     error_message = "batch_results status should be 'found' for an existing policy."
   }
 
   assert {
-    condition     = output.batch_results[var.source_policy_name].found == true
+    condition     = output.batch_results[keys(output.batch_results)[0]].found == true
     error_message = "batch_results.found should be true for an existing policy."
   }
 
   assert {
-    condition     = output.batch_results[var.source_policy_name].tfvars_content != ""
+    condition     = output.batch_results[keys(output.batch_results)[0]].tfvars_content != ""
     error_message = "batch_results.tfvars_content should be non-empty for a found policy."
   }
 
   assert {
-    condition     = output.batch_results[var.source_policy_name].file_path == "tftest-batch-policy-a.tfvars"
+    condition     = output.batch_results[keys(output.batch_results)[0]].file_path == "tftest-batch-policy-a.tfvars"
     error_message = "batch_results.file_path should match the output_files entry."
   }
 
   assert {
-    condition     = output.batch_file_paths[var.source_policy_name] == "tftest-batch-policy-a.tfvars"
+    condition     = output.batch_file_paths[keys(output.batch_file_paths)[0]] == "tftest-batch-policy-a.tfvars"
     error_message = "batch_file_paths should contain the written file path for a found policy."
   }
 
   assert {
-    condition     = !strcontains(output.batch_results[var.source_policy_name].tfvars_content, "non_business_connectors")
+    condition     = !strcontains(output.batch_results[keys(output.batch_results)[0]].tfvars_content, "non_business_connectors")
     error_message = "Batch tfvars content must not contain non_business_connectors."
   }
 }
@@ -154,7 +154,7 @@ run "batch_independent_soft_miss_does_not_affect_found" {
   }
 
   assert {
-    condition     = output.batch_results[var.source_policy_name].found == true
+    condition     = one([for name, result in output.batch_results : result.found if result.found]) == true
     error_message = "Found policy should still be found when a missing policy is in the same batch."
   }
 
@@ -164,7 +164,7 @@ run "batch_independent_soft_miss_does_not_affect_found" {
   }
 
   assert {
-    condition     = output.batch_file_paths[var.source_policy_name] == "tftest-batch-policy-a-mixed.tfvars"
+    condition     = output.batch_file_paths[one([for name, result in output.batch_results : name if result.found])] == "tftest-batch-policy-a-mixed.tfvars"
     error_message = "Found policy file path should be written even when another policy in the batch is missing."
   }
 }
@@ -183,8 +183,8 @@ run "batch_stable_keys_not_renumbered" {
   }
 
   assert {
-    condition     = output.batch_results[var.source_policy_name].requested_name == var.source_policy_name
-    error_message = "Batch result key must be the exact requested name, not a renumbered index."
+    condition     = output.batch_results[var.source_policy_names[0]].requested_name == var.source_policy_names[0]
+    error_message = "Batch result key must equal the requested policy name supplied as input, not a renumbered index."
   }
 }
 
