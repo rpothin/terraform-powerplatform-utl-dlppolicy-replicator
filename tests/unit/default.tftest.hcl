@@ -370,3 +370,388 @@ run "default_connectors_classification_null_when_policy_not_found" {
     error_message = "default_connectors_classification should be null when no policy is found."
   }
 }
+
+###############################################################################
+# NEW BATCH MODE VALIDATION TESTS
+###############################################################################
+
+###############################################################################
+# Test 21: Rejects both source_policy_name and source_policy_names set together
+###############################################################################
+run "rejects_both_scalar_and_batch_set" {
+  command = plan
+
+  variables {
+    source_policy_name  = "Policy A"
+    source_policy_names = ["Policy B"]
+  }
+
+  expect_failures = [
+    var.source_policy_names,
+  ]
+}
+
+###############################################################################
+# Test 22: Rejects neither mode (both null) — needs at least one
+###############################################################################
+run "rejects_neither_mode_set" {
+  command = plan
+
+  variables {
+    # Both source_policy_name and source_policy_names are null (their defaults).
+    # The exactly-one-mode validation on source_policy_names must reject this.
+    source_policy_names = null
+  }
+
+  expect_failures = [
+    var.source_policy_names,
+  ]
+}
+
+###############################################################################
+# Test 23: Rejects empty source_policy_names list
+###############################################################################
+run "rejects_empty_source_policy_names_list" {
+  command = plan
+
+  variables {
+    source_policy_names = []
+  }
+
+  expect_failures = [
+    var.source_policy_names,
+  ]
+}
+
+###############################################################################
+# Test 24: Rejects blank entry in source_policy_names
+###############################################################################
+run "rejects_blank_entry_in_source_policy_names" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Valid Policy", "   "]
+  }
+
+  expect_failures = [
+    var.source_policy_names,
+  ]
+}
+
+###############################################################################
+# Test 25: Rejects overlong entry in source_policy_names (> 256 chars)
+###############################################################################
+run "rejects_overlong_entry_in_source_policy_names" {
+  command = plan
+
+  variables {
+    source_policy_names = ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+  }
+
+  expect_failures = [
+    var.source_policy_names,
+  ]
+}
+
+###############################################################################
+# Test 26: Rejects duplicate entries in source_policy_names
+###############################################################################
+run "rejects_duplicate_entries_in_source_policy_names" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A", "Policy B", "Policy A"]
+  }
+
+  expect_failures = [
+    var.source_policy_names,
+  ]
+}
+
+###############################################################################
+# Test 27: Accepts valid source_policy_names list
+###############################################################################
+run "accepts_valid_source_policy_names" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A", "Policy B"]
+  }
+
+  assert {
+    condition     = var.source_policy_names == tolist(["Policy A", "Policy B"])
+    error_message = "source_policy_names should be accepted when valid."
+  }
+}
+
+###############################################################################
+# Test 28: batch_results is empty map in scalar mode
+###############################################################################
+run "batch_results_empty_in_scalar_mode" {
+  command = plan
+
+  variables {
+    source_policy_name = "My DLP Policy"
+  }
+
+  assert {
+    condition     = output.batch_results == {}
+    error_message = "batch_results should be an empty map when in scalar mode."
+  }
+}
+
+###############################################################################
+# Test 29: batch_results contains not_found status for all names
+#          (mock returns empty policies list so all names are not_found)
+###############################################################################
+run "batch_results_not_found_status_with_mock" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A", "Policy B"]
+  }
+
+  assert {
+    condition     = output.batch_results["Policy A"].status == "not_found"
+    error_message = "batch_results[Policy A].status should be 'not_found' when mock returns empty policies."
+  }
+
+  assert {
+    condition     = output.batch_results["Policy B"].status == "not_found"
+    error_message = "batch_results[Policy B].status should be 'not_found' when mock returns empty policies."
+  }
+}
+
+###############################################################################
+# Test 30: batch_results found flag is false for all names with mock
+###############################################################################
+run "batch_results_found_false_with_mock" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A", "Policy B"]
+  }
+
+  assert {
+    condition     = output.batch_results["Policy A"].found == false
+    error_message = "batch_results[Policy A].found should be false when mock returns empty policies."
+  }
+
+  assert {
+    condition     = output.batch_results["Policy B"].found == false
+    error_message = "batch_results[Policy B].found should be false when mock returns empty policies."
+  }
+}
+
+###############################################################################
+# Test 31: batch_results tfvars_content is empty for not_found policies
+###############################################################################
+run "batch_results_no_tfvars_content_for_not_found" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A"]
+  }
+
+  assert {
+    condition     = output.batch_results["Policy A"].tfvars_content == ""
+    error_message = "batch_results tfvars_content should be empty for not_found policies."
+  }
+}
+
+###############################################################################
+# Test 32: batch_results file_path is null for not_found policies
+###############################################################################
+run "batch_results_file_path_null_for_not_found" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A"]
+    output_files = {
+      "Policy A" = "policy-a.tfvars"
+    }
+  }
+
+  assert {
+    condition     = output.batch_results["Policy A"].file_path == null
+    error_message = "batch_results file_path should be null when the policy is not found (regardless of output_files entry)."
+  }
+}
+
+###############################################################################
+# Test 33: batch_file_paths is empty map in scalar mode
+###############################################################################
+run "batch_file_paths_empty_in_scalar_mode" {
+  command = plan
+
+  variables {
+    source_policy_name = "My DLP Policy"
+  }
+
+  assert {
+    condition     = output.batch_file_paths == {}
+    error_message = "batch_file_paths should be an empty map in scalar mode."
+  }
+}
+
+###############################################################################
+# Test 34: batch_file_paths is empty when no policies found (all not_found)
+###############################################################################
+run "batch_file_paths_empty_when_no_policies_found" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A", "Policy B"]
+    output_files = {
+      "Policy A" = "policy-a.tfvars"
+      "Policy B" = "policy-b.tfvars"
+    }
+  }
+
+  assert {
+    condition     = output.batch_file_paths == {}
+    error_message = "batch_file_paths should be empty when no policies are found."
+  }
+}
+
+###############################################################################
+# Test 35: Rejects output_files with non-.tfvars extension
+###############################################################################
+run "rejects_output_files_non_tfvars_extension" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A"]
+    output_files = {
+      "Policy A" = "policy-a.txt"
+    }
+  }
+
+  expect_failures = [
+    var.output_files,
+  ]
+}
+
+###############################################################################
+# Test 36: Rejects output_files key not in source_policy_names
+###############################################################################
+run "rejects_output_files_key_not_in_source_policy_names" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A"]
+    output_files = {
+      "Policy A"       = "policy-a.tfvars"
+      "Unknown Policy" = "unknown.tfvars"
+    }
+  }
+
+  expect_failures = [
+    var.output_files,
+  ]
+}
+
+###############################################################################
+# Test 37: Rejects output_files in scalar mode (must be empty)
+###############################################################################
+run "rejects_output_files_in_scalar_mode" {
+  command = plan
+
+  variables {
+    source_policy_name = "My DLP Policy"
+    output_files = {
+      "My DLP Policy" = "my-policy.tfvars"
+    }
+  }
+
+  expect_failures = [
+    var.output_files,
+  ]
+}
+
+###############################################################################
+# Test 38: policy_found is false in batch mode (scalar output is batch-inactive)
+###############################################################################
+run "policy_found_false_in_batch_mode" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A"]
+  }
+
+  assert {
+    condition     = output.policy_found == false
+    error_message = "policy_found (scalar output) should be false when in batch mode."
+  }
+}
+
+###############################################################################
+# Test 39: batch_results preserves exact requested_name field
+###############################################################################
+run "batch_results_preserves_requested_name" {
+  command = plan
+
+  variables {
+    source_policy_names = ["My Exact Policy Name"]
+  }
+
+  assert {
+    condition     = output.batch_results["My Exact Policy Name"].requested_name == "My Exact Policy Name"
+    error_message = "batch_results.requested_name must equal the original requested name."
+  }
+}
+
+###############################################################################
+# Test 40: batch_results migration_summary reflects preserve_connector_rules
+###############################################################################
+run "batch_results_migration_summary_reflects_preserve_rules" {
+  command = plan
+
+  variables {
+    source_policy_names      = ["Policy A"]
+    preserve_connector_rules = true
+  }
+
+  assert {
+    condition     = output.batch_results["Policy A"].migration_summary.preserve_connector_rules == true
+    error_message = "batch_results.migration_summary.preserve_connector_rules should be true when the variable is set."
+  }
+}
+
+###############################################################################
+# Test 42: batch advisory check — _batch_reclassified_connector_ids is empty
+#          when mock returns no connectors (all batch policies are not_found)
+###############################################################################
+run "batch_reclassified_connector_ids_empty_with_mock" {
+  command = plan
+
+  variables {
+    source_policy_names = ["Policy A", "Policy B"]
+  }
+
+  # With mock provider all policies are not_found, so no batch details exist
+  # and _batch_reclassified_connector_ids must be empty.
+  # The check block no_blockable_connectors_in_non_business_batch must pass.
+  assert {
+    condition     = length(output.batch_results["Policy A"].connectors_reclassified_to_blocked) == 0
+    error_message = "batch_results connectors_reclassified_to_blocked should be empty when policies are not found."
+  }
+
+  assert {
+    condition     = length(output.batch_results["Policy B"].connectors_reclassified_to_blocked) == 0
+    error_message = "batch_results connectors_reclassified_to_blocked should be empty when policies are not found."
+  }
+}
+
+run "rejects_whitespace_only_source_policy_name" {
+  command = plan
+
+  variables {
+    source_policy_name = "   "
+  }
+
+  expect_failures = [
+    var.source_policy_name,
+  ]
+}
+

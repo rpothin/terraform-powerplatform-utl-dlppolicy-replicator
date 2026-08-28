@@ -5,19 +5,36 @@
 [![Terraform Registry](https://img.shields.io/badge/Terraform-Registry-blue.svg)](https://registry.terraform.io/modules/rpothin/utl-dlppolicy-replicator/powerplatform)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/rpothin/terraform-powerplatform-utl-dlppolicy-replicator/blob/main/LICENSE)
 
-Reads an existing Power Platform DLP policy from a live tenant and generates a `.tfvars` file compatible with [`rpothin/res-dlppolicy/powerplatform`](https://registry.terraform.io/modules/rpothin/res-dlppolicy/powerplatform).
+Reads existing Power Platform DLP policies from a live tenant and generates `.tfvars` files compatible with [`rpothin/res-dlppolicy/powerplatform`](https://registry.terraform.io/modules/rpothin/res-dlppolicy/powerplatform).
 
-Use this module once to migrate an admin-center-managed DLP policy into Terraform governance via `res-dlppolicy`.
+Use this module once to migrate one or more admin-center-managed DLP policies into Terraform governance via `res-dlppolicy`.
 
 The provider connector catalog is canonicalized by connector ID before classification, so duplicate records from overlapping metadata endpoints do not cause Terraform duplicate-key failures. When duplicate records disagree, an ID is treated as unblockable if any record marks it as unblockable.
 
-> **Tip:** Add the generated `.tfvars` file to your `.gitignore` — it contains environment IDs and connector configurations that vary by tenant.
+> **Tip:** Add the generated `.tfvars` files to your `.gitignore` — they contain environment IDs and connector configurations that vary by tenant.
+
+## Mode Selection
+
+The module operates in one of two mutually exclusive modes. Exactly one of the two inputs below must be set:
+
+| Mode | Input | When to use |
+|---|---|---|
+| **Scalar** | `source_policy_name = "My Policy"` | Replicate a single policy. Preserves the existing `local_file.generated_tfvars[0]` state address. |
+| **Batch** | `source_policy_names = ["Policy A", "Policy B"]` | Replicate multiple policies in one invocation, amortising the tenant-wide data-source reads across all requested names. |
+
+### Batch mode
+
+- Each name is resolved independently. A **missing** policy is a soft miss (`status = "not_found"`) — it does not block other names in the same batch.
+- An **ambiguous** name (two or more tenant policies share the same display name) surfaces as `status = "ambiguous"` and produces **no file**, preventing an incorrect snapshot.
+- File destinations are caller-controlled through the `output_files` map (keys = requested names, values = `.tfvars` paths). Only `found` policies with a matching key in `output_files` produce a file.
+- Result keys in `batch_results` are the **exact requested strings** — no sanitisation. State addresses (`local_file.generated_tfvars_batch["My Policy"]`) are therefore stable when you add or remove other names from the batch.
 
 ## Prerequisites
 
 - The calling service principal must have the **Power Platform Administrator** role.
 - OIDC authentication must be configured (see [Authentication](#authentication) below).
-- DLP policy display names must be **unique** within the tenant scope — if two policies share the same name, `one()` will error.
+- In scalar mode, the policy display name must be **unique** within the tenant scope — `one()` will error on an ambiguous match.
+- In batch mode, ambiguous names are surfaced as `status = "ambiguous"` rather than erroring the whole operation.
 
 ## Known Behaviour Changes After Migration
 
@@ -26,11 +43,11 @@ When you apply the generated `.tfvars` with `res-dlppolicy`, the following behav
 | Behaviour | Details |
 |---|---|
 | **Wildcard custom-connector pattern removed** | `res-dlppolicy` appends `host_url_pattern = "*"` automatically. Any `"*"` entry in the source policy is stripped from the generated tfvars. |
-| **NonBusiness → Blocked reclassification** | `res-dlppolicy` auto-computes the NonBusiness group from the connector catalog. Blockable connectors currently in NonBusiness **will be reclassified to Blocked**. Review `connectors_reclassified_to_blocked` output before applying. |
+| **NonBusiness → Blocked reclassification** | `res-dlppolicy` auto-computes the NonBusiness group from the connector catalog. Blockable connectors currently in NonBusiness **will be reclassified to Blocked**. Review `connectors_reclassified_to_blocked` (scalar) or `batch_results[name].connectors_reclassified_to_blocked` (batch) before applying. |
 | **Connector rules stripped by default** | `action_rules` and `endpoint_rules` on business connectors are stripped unless `preserve_connector_rules = true`. |
-| **Perpetual plan diff** | `timestamp()` is used in the generated file header and in the `migration_summary.generation_timestamp` output. Each `terraform plan` will show diffs on `generated_tfvars_content` and `migration_summary`. This is intentional for a one-shot migration utility — apply once, then discard the module. |
-| **`terraform destroy` deletes the generated file** | Running `terraform destroy` removes the `.tfvars` file written by this module. Re-run `terraform apply` to regenerate it. |
-| **Reclassification check runs on every plan** | The advisory `check` block re-evaluates against the live source policy on every `terraform plan`. It is not a one-shot gate — it re-fires whenever the source policy changes. |
+| **Perpetual plan diff** | `timestamp()` is used in the generated file header and in `migration_summary.generation_timestamp`. Each `terraform plan` will show diffs on `generated_tfvars_content`/`batch_results[*].tfvars_content` and the corresponding summary timestamps. This is intentional for a one-shot migration utility — apply once, then discard the module. |
+| **`terraform destroy` deletes the generated files** | Running `terraform destroy` removes any `.tfvars` files written by this module. Re-run `terraform apply` to regenerate them. |
+| **Reclassification check runs on every plan** | The advisory `check` block re-evaluates the scalar-mode policy against the live source on every `terraform plan`. It is not a one-shot gate. It does not run per-policy in batch mode. |
 
 <!-- markdownlint-disable MD033 -->
 ## Requirements
@@ -48,19 +65,14 @@ The following requirements are needed by this module:
 The following resources are used by this module:
 
 - [local_file.generated_tfvars](https://registry.terraform.io/providers/hashicorp/local/latest/docs/resources/file) (resource)
+- [local_file.generated_tfvars_batch](https://registry.terraform.io/providers/hashicorp/local/latest/docs/resources/file) (resource)
 - [powerplatform_connectors.all](https://registry.terraform.io/providers/microsoft/power-platform/latest/docs/data-sources/connectors) (data source)
 - [powerplatform_data_loss_prevention_policies.current](https://registry.terraform.io/providers/microsoft/power-platform/latest/docs/data-sources/data_loss_prevention_policies) (data source)
 
 <!-- markdownlint-disable MD013 -->
 ## Required Inputs
 
-The following input variables are required:
-
-### <a name="input_source_policy_name"></a> [source\_policy\_name](#input\_source\_policy\_name)
-
-Description: Display name of the existing DLP policy to replicate. Must match exactly one policy in the tenant.
-
-Type: `string`
+No required inputs.
 
 ## Optional Inputs
 
@@ -68,23 +80,55 @@ The following input variables are optional (have default values):
 
 ### <a name="input_output_file"></a> [output\_file](#input\_output\_file)
 
-Description: Path to write the generated .tfvars file (relative to the Terraform working directory). Must end with .tfvars extension.
+Description: Path to write the generated .tfvars file in scalar mode (relative to the Terraform working directory). Must end with .tfvars extension. Unused in batch mode — use output\_files instead.
 
 Type: `string`
 
 Default: `"replicated-dlp-policy.tfvars"`
 
+### <a name="input_output_files"></a> [output\_files](#input\_output\_files)
+
+Description: Map of policy display names to output file paths for batch mode. Keys must match entries in source\_policy\_names. All values must end with .tfvars. Only found policies with a matching key will have a file written. Missing and ambiguous policies never produce a file. Must be empty in scalar mode.
+
+Type: `map(string)`
+
+Default: `{}`
+
 ### <a name="input_preserve_connector_rules"></a> [preserve\_connector\_rules](#input\_preserve\_connector\_rules)
 
-Description: When true, preserves action\_rules and endpoint\_rules from the source policy's business connectors. When false (default), rules are stripped for simpler onboarding.
+Description: When true, preserves action\_rules and endpoint\_rules from the source policy's business connectors. When false (default), rules are stripped for simpler onboarding. Applies to both scalar and batch modes.
 
 Type: `bool`
 
 Default: `false`
 
+### <a name="input_source_policy_name"></a> [source\_policy\_name](#input\_source\_policy\_name)
+
+Description: Display name of the existing DLP policy to replicate (scalar mode). Exactly one of source\_policy\_name or source\_policy\_names must be set. Must match exactly one policy in the tenant. Must be between 1 and 256 non-blank characters when set.
+
+Type: `string`
+
+Default: `null`
+
+### <a name="input_source_policy_names"></a> [source\_policy\_names](#input\_source\_policy\_names)
+
+Description: List of DLP policy display names to extract in one batch invocation (batch mode). Exactly one of source\_policy\_name or source\_policy\_names must be set. Each name must be unique within the list, non-blank, and between 1 and 256 characters. Duplicate names are rejected to prevent silent key collisions.
+
+Type: `list(string)`
+
+Default: `null`
+
 ## Outputs
 
 The following outputs are exported:
+
+### <a name="output_batch_file_paths"></a> [batch\_file\_paths](#output\_batch\_file\_paths)
+
+Description: Map of policy names to written file paths (batch mode only; empty map in scalar mode). Keys are the exact requested names from source\_policy\_names. Only includes entries for found policies that have a corresponding key in output\_files.
+
+### <a name="output_batch_results"></a> [batch\_results](#output\_batch\_results)
+
+Description: Map of requested policy names to their extraction results (batch mode only; empty map in scalar mode). Each entry includes: status (found/not\_found/ambiguous), found flag, transformed policy fields (display\_name, environment\_type, environments, business\_connectors, custom\_connectors\_patterns, connectors\_reclassified\_to\_blocked), file\_path (set only when found and an output\_files entry exists), tfvars\_content, and migration\_summary. Missing policies produce no file and ambiguous policies are surfaced as status=ambiguous without writing a file.
 
 ### <a name="output_business_connectors"></a> [business\_connectors](#output\_business\_connectors)
 
@@ -92,7 +136,7 @@ Description: List of business connectors from the source policy, ready for use w
 
 ### <a name="output_connectors_reclassified_to_blocked"></a> [connectors\_reclassified\_to\_blocked](#output\_connectors\_reclassified\_to\_blocked)
 
-Description: IDs of connectors that are in the source policy's NonBusiness group but are blockable. These will be reclassified to Blocked by res-dlppolicy post-migration.
+Description: IDs of connectors that are in the source policy's NonBusiness group but are blockable. These will be reclassified to Blocked by res-dlppolicy post-migration (scalar mode only; per-policy data is in batch\_results in batch mode).
 
 ### <a name="output_custom_connectors_patterns"></a> [custom\_connectors\_patterns](#output\_custom\_connectors\_patterns)
 
@@ -120,15 +164,15 @@ Description: The full content of the generated .tfvars file, or empty string if 
 
 ### <a name="output_migration_summary"></a> [migration\_summary](#output\_migration\_summary)
 
-Description: Summary object with policy metadata, connector counts, behavioural flags, and generation timestamp. The 'generation\_timestamp' field uses timestamp() and changes on every plan — intentional for a one-shot migration utility.
+Description: Summary object with policy metadata, connector counts, behavioural flags, and generation timestamp. The 'generation\_timestamp' field uses timestamp() and changes on every plan — intentional for a one-shot migration utility. In batch mode, source\_policy\_name and policy\_found reflect the scalar-mode values (null/false).
 
 ### <a name="output_policy_found"></a> [policy\_found](#output\_policy\_found)
 
-Description: Whether a DLP policy with the given display\_name was found in the tenant.
+Description: Whether a DLP policy with the given display\_name was found in the tenant (scalar mode only; false in batch mode).
 
 ### <a name="output_tfvars_file_path"></a> [tfvars\_file\_path](#output\_tfvars\_file\_path)
 
-Description: Path of the generated .tfvars file, or null if the policy was not found.
+Description: Path of the generated .tfvars file, or null if the policy was not found (scalar mode only).
 
 ## Modules
 
