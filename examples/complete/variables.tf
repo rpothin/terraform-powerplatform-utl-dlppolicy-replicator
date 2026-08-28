@@ -1,13 +1,16 @@
-variable "source_policy_name" {
-  description = "Display name of the DLP policy to replicate."
-  type        = string
-  default     = "My DLP Policy"
+variable "source_policy_names" {
+  description = "List of DLP policy display names to replicate in batch mode."
+  type        = list(string)
+  default     = ["My DLP Policy", "My Second DLP Policy"]
 }
 
-variable "output_file" {
-  description = "Path to write the generated .tfvars file."
-  type        = string
-  default     = "replicated-dlp-policy.tfvars"
+variable "output_files" {
+  description = "Map of policy display names to output .tfvars file paths."
+  type        = map(string)
+  default = {
+    "My DLP Policy"        = "my-dlp-policy.tfvars"
+    "My Second DLP Policy" = "my-second-dlp-policy.tfvars"
+  }
 }
 
 variable "preserve_connector_rules" {
