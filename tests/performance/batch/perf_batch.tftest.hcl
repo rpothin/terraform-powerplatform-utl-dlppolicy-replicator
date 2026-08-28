@@ -1,8 +1,14 @@
 # Performance benchmark — batch mode.
 #
-# Uses command = plan because the expensive source policy reads occur at planning
-# time (data source evaluation). No file I/O is performed, which keeps the
-# benchmark focused on the provider's read latency.
+# Uses command = apply (not plan) because the module calls timestamp() inside
+# locals, which makes outputs such as tfvars_content and file_path unknown at
+# plan time. Running apply ensures all outputs are fully resolved so the
+# non-empty content and file-path assertions below can be evaluated without
+# hitting an "Unknown condition value" error.
+#
+# The test is still isolated: Terraform destroys all resources it creates when
+# the test run completes, and the exporter writes only local files that are
+# cleaned up automatically. No persistent side-effects remain after the run.
 #
 # Prerequisites:
 #   POWER_PLATFORM_USE_OIDC=true
@@ -26,7 +32,7 @@ variable "source_policy_name_b" {
 }
 
 run "perf_batch_two_policies_found" {
-  command = plan
+  command = apply
 
   variables {
     source_policy_name  = null

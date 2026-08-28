@@ -1,8 +1,14 @@
 # Performance benchmark — scalar mode.
 #
-# Uses command = plan because the expensive source policy reads occur at planning
-# time (data source evaluation). No file I/O is performed, which keeps the
-# benchmark focused on the provider's read latency.
+# Uses command = apply (not plan) because the module calls timestamp() inside
+# locals, which makes outputs such as generated_tfvars_content unknown at plan
+# time. Running apply ensures all outputs are fully resolved so the non-empty
+# content assertions below can be evaluated without hitting an
+# "Unknown condition value" error.
+#
+# The test is still isolated: Terraform destroys all resources it creates when
+# the test run completes, and the exporter writes only local files that are
+# cleaned up automatically. No persistent side-effects remain after the run.
 #
 # Prerequisites:
 #   POWER_PLATFORM_USE_OIDC=true
@@ -20,7 +26,7 @@ variable "source_policy_name" {
 }
 
 run "perf_scalar_policy_found" {
-  command = plan
+  command = apply
 
   variables {
     source_policy_name = var.source_policy_name

@@ -13,8 +13,8 @@ This directory contains Terraform native tests (`.tftest.hcl`) for the module.
 |-----------|------|-------------|---------|
 | `unit/` | Mock provider tests | None required | `command = plan` |
 | `integration/` | Real provider tests | OIDC required | `command = apply` |
-| `performance/scalar/` | Scalar benchmark (opt-in) | OIDC required | `command = plan` |
-| `performance/batch/` | Batch benchmark (opt-in) | OIDC required | `command = plan` |
+| `performance/scalar/` | Scalar benchmark (opt-in) | OIDC required | `command = apply` |
+| `performance/batch/` | Batch benchmark (opt-in) | OIDC required | `command = apply` |
 
 ## Running Tests
 
@@ -93,6 +93,9 @@ The benchmark job in `.github/workflows/ci.yml` runs only when **all four** of t
 This prevents an enabled-but-unconfigured benchmark job from failing due to unset policy-name variables.
 
 It runs three cold Terraform invocations (scalar A, scalar B, batch A+B), times each one in milliseconds using nanosecond-resolution `date +%s%N`, and prints a machine-readable summary to the job log and GitHub Step Summary. **No absolute threshold is enforced** — the job fails only if a correctness assertion inside the test fails, not based on elapsed time.
+
+> [!NOTE]
+> Both benchmark test files use `command = apply` rather than `command = plan`. The module calls `timestamp()` inside locals, which leaves outputs such as `generated_tfvars_content` unknown during a plan-only run, causing Terraform to report `Unknown condition value` on the non-empty content assertions. Apply resolves all outputs so the assertions can be evaluated. Tests are isolated: Terraform destroys any resources it creates when the run completes, and the exporter writes only local files that are cleaned up automatically.
 
 #### Interpretation caveat
 
