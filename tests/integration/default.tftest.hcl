@@ -75,6 +75,7 @@ run "batch_found_policy_produces_result" {
   command = apply
 
   variables {
+    source_policy_name  = null
     source_policy_names = [var.source_policy_name]
     output_files = {
       (var.source_policy_name) = "tftest-batch-policy-a.tfvars"
@@ -116,6 +117,7 @@ run "batch_missing_policy_is_soft_miss" {
   command = plan
 
   variables {
+    source_policy_name  = null
     source_policy_names = ["tftest-nonexistent-policy-that-should-not-exist"]
   }
 
@@ -144,6 +146,7 @@ run "batch_independent_soft_miss_does_not_affect_found" {
   command = apply
 
   variables {
+    source_policy_name  = null
     source_policy_names = [var.source_policy_name, "tftest-nonexistent-policy-that-should-not-exist"]
     output_files = {
       (var.source_policy_name) = "tftest-batch-policy-a-mixed.tfvars"
@@ -172,6 +175,7 @@ run "batch_stable_keys_not_renumbered" {
   command = apply
 
   variables {
+    source_policy_name  = null
     source_policy_names = [var.source_policy_name]
     output_files = {
       (var.source_policy_name) = "tftest-batch-stable-key.tfvars"
