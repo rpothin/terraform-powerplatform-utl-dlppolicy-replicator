@@ -31,6 +31,7 @@ The module operates in one of two mutually exclusive modes. Exactly one of the t
 
 - The calling service principal must have the **Power Platform Administrator** role.
 - OIDC authentication must be configured (see [Authentication](#authentication) below).
+- In CI, provide the Power Platform tenant and client IDs through OIDC-backed environment variables; do not commit client secrets.
 - In scalar mode, the policy display name must be **unique** within the tenant scope — `one()` will error on an ambiguous match.
 - In batch mode, ambiguous names are surfaced as `status = "ambiguous"` rather than erroring the whole operation.
 
