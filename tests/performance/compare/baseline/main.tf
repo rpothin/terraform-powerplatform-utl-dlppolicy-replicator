@@ -7,7 +7,7 @@ terraform {
       version = "~> 2.4"
     }
     powerplatform = {
-      source  = "microsoft/power-platform"
+      source = "microsoft/power-platform"
       # Use the same provider as the candidate harness to isolate module changes.
       version = "= 4.2.0"
     }

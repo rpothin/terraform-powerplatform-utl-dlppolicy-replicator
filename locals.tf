@@ -114,7 +114,7 @@ locals {
         ])) :
         lower(environment)
       ])
-      business_connectors = local._policy_connector_groups[name].business
+      business_connectors     = local._policy_connector_groups[name].business
       non_business_connectors = local._policy_connector_groups[name].non_business
       blocked_connectors      = local._policy_connector_groups[name].blocked
       custom_connectors_patterns = [

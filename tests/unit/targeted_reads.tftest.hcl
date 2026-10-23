@@ -32,10 +32,10 @@ override_data {
     output = {
       body = jsonencode({
         policyDefinition = {
-          name                             = "policy-id"
-          displayName                      = "Unit Policy"
+          name                            = "policy-id"
+          displayName                     = "Unit Policy"
           defaultConnectorsClassification = "General"
-          environmentType                  = "OnlyEnvironments"
+          environmentType                 = "OnlyEnvironments"
           environments = [
             { name = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB" },
             { name = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA" },
@@ -57,9 +57,9 @@ override_data {
         }
         connectorConfigurationsDefinition = {
           connectorActionConfigurations = [{
-            connectorId                            = "connector-business"
-            defaultConnectorActionRuleBehavior     = "Allow"
-            actionRules                            = [{ actionId = "action-1", behavior = "Block" }]
+            connectorId                        = "connector-business"
+            defaultConnectorActionRuleBehavior = "Allow"
+            actionRules                        = [{ actionId = "action-1", behavior = "Block" }]
           }]
           endpointConfigurations = [{
             connectorId = "connector-business"
@@ -118,7 +118,7 @@ run "scalar_targeted_read_projects_policy_details" {
   }
 
   assert {
-    condition     = output.environments == ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]
+    condition     = jsonencode(output.environments) == jsonencode(["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"])
     error_message = "Environment IDs must remain lowercased and sorted."
   }
 
@@ -128,7 +128,7 @@ run "scalar_targeted_read_projects_policy_details" {
   }
 
   assert {
-    condition     = output.business_connectors[0].action_rules == [{ action_id = "action-1", behavior = "Block" }] && output.business_connectors[0].endpoint_rules == [{ order = 1, endpoint = "https://example.invalid", behavior = "Deny" }]
+    condition     = jsonencode(output.business_connectors[0].action_rules) == jsonencode([{ action_id = "action-1", behavior = "Block" }]) && jsonencode(output.business_connectors[0].endpoint_rules) == jsonencode([{ order = 1, endpoint = "https://example.invalid", behavior = "Deny" }])
     error_message = "Connector action and endpoint rules must be preserved when requested."
   }
 
@@ -167,7 +167,7 @@ run "batch_targeted_read_projects_policy_details" {
   }
 
   assert {
-    condition     = output.batch_results["Unit Policy"].business_connectors[0].action_rules == [] && output.batch_results["Unit Policy"].business_connectors[0].endpoint_rules == []
+    condition     = length(output.batch_results["Unit Policy"].business_connectors[0].action_rules) == 0 && length(output.batch_results["Unit Policy"].business_connectors[0].endpoint_rules) == 0
     error_message = "Connector rules must remain stripped by default in batch mode."
   }
 }
