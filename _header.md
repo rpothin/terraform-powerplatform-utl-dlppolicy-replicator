@@ -18,7 +18,9 @@ The module operates in one of two mutually exclusive modes. Exactly one of the t
 | Mode | Input | When to use |
 |---|---|---|
 | **Scalar** | `source_policy_name = "My Policy"` | Replicate a single policy. Preserves the existing `local_file.generated_tfvars[0]` state address. |
-| **Batch** | `source_policy_names = ["Policy A", "Policy B"]` | Replicate multiple policies in one invocation, amortising the tenant-wide data-source reads across all requested names. |
+| **Batch** | `source_policy_names = ["Policy A", "Policy B"]` | Replicate multiple policies in one invocation while fetching details only for uniquely matched requested names. |
+
+The module reads the tenant policy index once, then requests details only for uniquely matched requested policies. It does not retrieve every policy definition. A paginated list, malformed response, or detail response that does not match the requested policy fails closed with a diagnostic rather than producing a partial snapshot.
 
 ### Batch mode
 
@@ -31,8 +33,9 @@ The module operates in one of two mutually exclusive modes. Exactly one of the t
 
 - The calling service principal must have the **Power Platform Administrator** role.
 - OIDC authentication must be configured (see [Authentication](#authentication) below).
-- In scalar mode, the policy display name must be **unique** within the tenant scope — `one()` will error on an ambiguous match.
+- In scalar mode, the policy display name must be **unique** within the tenant scope — an ambiguous match fails with a diagnostic.
 - In batch mode, ambiguous names are surfaced as `status = "ambiguous"` rather than erroring the whole operation.
+- `bapi_host` and `bapi_scope` default to the public-cloud Power Platform Business API host and scope. Set them only when using a different cloud or API endpoint.
 
 ## Known Behaviour Changes After Migration
 
@@ -46,4 +49,3 @@ When you apply the generated `.tfvars` with `res-dlppolicy`, the following behav
 | **Perpetual plan diff** | `timestamp()` is used in the generated file header and in `migration_summary.generation_timestamp`. Each `terraform plan` will show diffs on `generated_tfvars_content`/`batch_results[*].tfvars_content` and the corresponding summary timestamps. This is intentional for a one-shot migration utility — apply once, then discard the module. |
 | **`terraform destroy` deletes the generated files** | Running `terraform destroy` removes any `.tfvars` files written by this module. Re-run `terraform apply` to regenerate them. |
 | **Reclassification check runs on every plan** | The advisory `check` block re-evaluates the scalar-mode policy against the live source on every `terraform plan`. It is not a one-shot gate. It does not run per-policy in batch mode. |
-

@@ -5,18 +5,10 @@
 #   POWER_PLATFORM_TENANT_ID=<your-tenant-id>
 #   POWER_PLATFORM_CLIENT_ID=<your-client-id>
 #   TF_VAR_source_policy_name=<existing-policy-name>
-#   TF_VAR_source_policy_name_b=<second-existing-policy-name>  (optional, for batch tests)
 
 variable "source_policy_name" {
   description = "Display name of an existing DLP policy to replicate in integration tests."
   type        = string
-}
-
-variable "source_policy_name_b" {
-  description = "Display name of a second existing DLP policy for batch integration tests. Optional — when not set, batch tests skip the two-policy scenario."
-  type        = string
-  default     = null
-  nullable    = true
 }
 
 run "replicates_existing_policy" {
@@ -187,4 +179,3 @@ run "batch_stable_keys_not_renumbered" {
     error_message = "Batch result key must equal the requested policy name supplied as input, not a renumbered index."
   }
 }
-

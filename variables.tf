@@ -92,3 +92,27 @@ variable "preserve_connector_rules" {
   default     = false
   nullable    = false
 }
+
+variable "bapi_host" {
+  description = "Hostname for Power Platform Business API requests. Provide the host only, without a scheme or path."
+  type        = string
+  default     = "api.bap.microsoft.com"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9.-]+(:[0-9]+)?$", var.bapi_host))
+    error_message = "bapi_host must be a hostname with an optional port, without a scheme or path."
+  }
+}
+
+variable "bapi_scope" {
+  description = "OAuth scope for Power Platform Business API requests. Defaults to the scope used by the Power Platform provider for BAPI calls."
+  type        = string
+  default     = "https://service.powerapps.com/.default"
+  nullable    = false
+
+  validation {
+    condition     = trimspace(var.bapi_scope) != ""
+    error_message = "bapi_scope must not be blank."
+  }
+}

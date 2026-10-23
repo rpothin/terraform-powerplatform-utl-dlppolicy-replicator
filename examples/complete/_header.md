@@ -12,5 +12,5 @@ and an `output_files` map to control where each generated `.tfvars` file is writ
 - Result keys are the exact requested strings — no sanitisation that could collide. State addresses are therefore stable when you add or remove names from the batch.
 - The same `timestamp()` perpetual-diff behaviour as scalar mode applies: each plan shows diffs on `tfvars_content` and `migration_summary.generation_timestamp`.
 
-> **Note:** Replace the default `source_policy_names` values with the exact display names of existing DLP policies in your tenant, otherwise their status will be `not_found` and no `.tfvars` files will be written.
-
+> [!NOTE]
+> Replace the default `source_policy_names` values with the exact display names of existing DLP policies in your tenant, otherwise their status will be `not_found` and no `.tfvars` files will be written.

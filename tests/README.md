@@ -13,8 +13,7 @@ This directory contains Terraform native tests (`.tftest.hcl`) for the module.
 |-----------|------|-------------|---------|
 | `unit/` | Mock provider tests | None required | `command = plan` |
 | `integration/` | Real provider tests | OIDC required | `command = apply` |
-| `performance/scalar/` | Scalar benchmark (opt-in) | OIDC required | `command = apply` |
-| `performance/batch/` | Batch benchmark (opt-in) | OIDC required | `command = apply` |
+| `performance/compare/` | Baseline-versus-candidate benchmark | OIDC required | Opt-in GitHub Actions job |
 
 ## Running Tests
 
@@ -41,68 +40,19 @@ terraform init -backend=false
 terraform test -test-directory=tests/integration
 ```
 
-### Performance Benchmarks (opt-in)
+### Baseline-versus-candidate benchmark (opt-in)
 
-Performance tests are isolated under `tests/performance/` and must be invoked explicitly by passing their directory to `-test-directory`. `make test-unit` targets `tests/unit` and `make test-integration` targets `tests/integration`, so neither picks up `tests/performance/`. Bare `terraform test` without a `-test-directory` flag scans `./tests` recursively and **would** include performance tests, which is another reason to always use the explicit `make` targets or an explicit `-test-directory` flag for controlled test runs.
+The benchmark compares the released `v0.1.3` module with the candidate module using Power Platform provider `4.2.0` in the same GitHub Actions job and testing tenant. Both harnesses pin the same provider version to isolate the module change. It runs one scalar-policy pair, records each Terraform apply duration, and requires semantic output parity (including generated tfvars content, excluding its timestamp) plus the expected policy-read reduction. It does **not** gate on elapsed time; repeat the pair only if the recorded result looks anomalous. Consumer-tenant parity and performance are outside this change and will be checked after release.
 
-#### Prerequisites
-
-- OIDC credentials (same as integration tests above)
-- Two existing DLP policy display names:
-  - `TF_VAR_source_policy_name` / `TF_VAR_source_policy_name_a` — Policy A
-  - `TF_VAR_source_policy_name_b` — Policy B
-
-#### Scalar benchmark (one policy at a time)
-
-```bash
-export POWER_PLATFORM_USE_OIDC=true
-export POWER_PLATFORM_TENANT_ID=<your-tenant-id>
-export POWER_PLATFORM_CLIENT_ID=<your-client-id>
-export TF_VAR_source_policy_name=<policy-A-display-name>
-
-terraform init -backend=false
-time terraform test -test-directory=tests/performance/scalar
-
-# Repeat for policy B
-export TF_VAR_source_policy_name=<policy-B-display-name>
-time terraform test -test-directory=tests/performance/scalar
-```
-
-#### Batch benchmark (both policies in one invocation)
-
-```bash
-export POWER_PLATFORM_USE_OIDC=true
-export POWER_PLATFORM_TENANT_ID=<your-tenant-id>
-export POWER_PLATFORM_CLIENT_ID=<your-client-id>
-export TF_VAR_source_policy_name_a=<policy-A-display-name>
-export TF_VAR_source_policy_name_b=<policy-B-display-name>
-
-terraform init -backend=false
-time terraform test -test-directory=tests/performance/batch
-```
-
-#### CI behaviour
-
-The benchmark job in `.github/workflows/ci.yml` runs only when **all four** of the following repository variables are configured:
+The job requires OIDC credentials and these repository variables:
 
 - `ENABLE_INTEGRATION_TESTS` set to `'true'`
 - `ENABLE_INTEGRATION_PERFORMANCE_TESTS` set to `'true'`
-- `INTEGRATION_SOURCE_POLICY_NAME` set to a non-empty policy display name (Policy A)
-- `INTEGRATION_SOURCE_POLICY_NAME_B` set to a non-empty policy display name (Policy B)
+- `INTEGRATION_SOURCE_POLICY_NAME` set to one existing testing-tenant policy display name
 
-This prevents an enabled-but-unconfigured benchmark job from failing due to unset policy-name variables.
+It derives the baseline read count from the `v0.1.3` provider data-source result (`N + 1` policy requests: one index request plus every tenant policy detail), and the candidate read count from its state (`1 + k`: one index request plus the targeted details). For the selected policy, `k` is one. The benchmark asserts that candidate policy-read count is lower, compares all stable policy outputs and generated tfvars content (excluding the generation timestamp), and reports baseline/candidate milliseconds in the job log and GitHub Step Summary. No live policy payload or Terraform state is uploaded or committed.
 
-It runs three cold Terraform invocations (scalar A, scalar B, batch A+B), times each one in milliseconds using nanosecond-resolution `date +%s%N`, and prints a machine-readable summary to the job log and GitHub Step Summary. **No absolute threshold is enforced** — the job fails only if a correctness assertion inside the test fails, not based on elapsed time.
-
-> [!NOTE]
-> Both benchmark test files use `command = apply` rather than `command = plan`. The module calls `timestamp()` inside locals, which leaves outputs such as `generated_tfvars_content` unknown during a plan-only run, causing Terraform to report `Unknown condition value` on the non-empty content assertions. Apply resolves all outputs so the assertions can be evaluated. Tests are isolated: Terraform destroys any resources it creates when the run completes, and the exporter writes only local files that are cleaned up automatically.
-
-#### Interpretation caveat
-
-> [!NOTE]
-> These benchmarks measure **Terraform-level wall-clock time** — the total elapsed time as seen by the Terraform CLI, including provider initialisation, API round-trips, and local computation. They do **not** measure HTTP request counts or provider-internal behaviour.
->
-> To draw a meaningful scalar vs. batch comparison, always compare the **scalar A + scalar B combined total** against the **batch A+B elapsed time** from the **same CI run** (same runner, tenant, and time window). Results from different runs, tenants, or times are not directly comparable.
+The benchmark is isolated under `tests/performance/compare/`; `make test-unit` and `make test-integration` do not invoke it. Use the explicit workflow opt-in rather than bare `terraform test`, which scans all test directories recursively.
 
 ### All Tests
 

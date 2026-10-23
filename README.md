@@ -20,7 +20,9 @@ The module operates in one of two mutually exclusive modes. Exactly one of the t
 | Mode | Input | When to use |
 |---|---|---|
 | **Scalar** | `source_policy_name = "My Policy"` | Replicate a single policy. Preserves the existing `local_file.generated_tfvars[0]` state address. |
-| **Batch** | `source_policy_names = ["Policy A", "Policy B"]` | Replicate multiple policies in one invocation, amortising the tenant-wide data-source reads across all requested names. |
+| **Batch** | `source_policy_names = ["Policy A", "Policy B"]` | Replicate multiple policies in one invocation while fetching details only for uniquely matched requested names. |
+
+The module reads the tenant policy index once, then requests details only for uniquely matched requested policies. It does not retrieve every policy definition. A paginated list, malformed response, or detail response that does not match the requested policy fails closed with a diagnostic rather than producing a partial snapshot.
 
 ### Batch mode
 
@@ -33,8 +35,9 @@ The module operates in one of two mutually exclusive modes. Exactly one of the t
 
 - The calling service principal must have the **Power Platform Administrator** role.
 - OIDC authentication must be configured (see [Authentication](#authentication) below).
-- In scalar mode, the policy display name must be **unique** within the tenant scope — `one()` will error on an ambiguous match.
+- In scalar mode, the policy display name must be **unique** within the tenant scope — an ambiguous match fails with a diagnostic.
 - In batch mode, ambiguous names are surfaced as `status = "ambiguous"` rather than erroring the whole operation.
+- `bapi_host` and `bapi_scope` default to the public-cloud Power Platform Business API host and scope. Set them only when using a different cloud or API endpoint.
 
 ## Known Behaviour Changes After Migration
 
@@ -67,7 +70,8 @@ The following resources are used by this module:
 - [local_file.generated_tfvars](https://registry.terraform.io/providers/hashicorp/local/latest/docs/resources/file) (resource)
 - [local_file.generated_tfvars_batch](https://registry.terraform.io/providers/hashicorp/local/latest/docs/resources/file) (resource)
 - [powerplatform_connectors.all](https://registry.terraform.io/providers/microsoft/power-platform/latest/docs/data-sources/connectors) (data source)
-- [powerplatform_data_loss_prevention_policies.current](https://registry.terraform.io/providers/microsoft/power-platform/latest/docs/data-sources/data_loss_prevention_policies) (data source)
+- [powerplatform_rest_query.policies_list](https://registry.terraform.io/providers/microsoft/power-platform/latest/docs/data-sources/rest_query) (data source)
+- [powerplatform_rest_query.policy](https://registry.terraform.io/providers/microsoft/power-platform/latest/docs/data-sources/rest_query) (data source)
 
 <!-- markdownlint-disable MD013 -->
 ## Required Inputs
@@ -77,6 +81,22 @@ No required inputs.
 ## Optional Inputs
 
 The following input variables are optional (have default values):
+
+### <a name="input_bapi_host"></a> [bapi\_host](#input\_bapi\_host)
+
+Description: Hostname for Power Platform Business API requests. Provide the host only, without a scheme or path.
+
+Type: `string`
+
+Default: `"api.bap.microsoft.com"`
+
+### <a name="input_bapi_scope"></a> [bapi\_scope](#input\_bapi\_scope)
+
+Description: OAuth scope for Power Platform Business API requests. Defaults to the scope used by the Power Platform provider for BAPI calls.
+
+Type: `string`
+
+Default: `"https://service.powerapps.com/.default"`
 
 ### <a name="input_output_file"></a> [output\_file](#input\_output\_file)
 
