@@ -9,70 +9,146 @@ locals {
   ])
   blockable_connector_ids = setsubtract(local.all_connector_ids, local.unblockable_connector_ids)
 
+  _policy_list_body = jsondecode(data.powerplatform_rest_query.policies_list.output.body)
+  _tenant_policies  = [for policy in local._policy_list_body.value : policy.policyDefinition]
+
+  _requested_policy_names = concat(
+    var.source_policy_name != null ? [var.source_policy_name] : [],
+    coalesce(var.source_policy_names, [])
+  )
+
+  _requested_match_counts = {
+    for name in local._requested_policy_names :
+    name => length([
+      for policy in local._tenant_policies :
+      policy if policy.displayName == name
+    ])
+  }
+
+  _found_policy_ids = {
+    for name, match_count in local._requested_match_counts :
+    name => one([
+      for policy in local._tenant_policies :
+      policy.name if policy.displayName == name
+    ])
+    if match_count == 1
+  }
+
+  _raw_policy_details = {
+    for name, query in data.powerplatform_rest_query.policy :
+    name => jsondecode(query.output.body)
+  }
+
+  _policy_action_configurations = {
+    for name, policy in local._raw_policy_details :
+    name => {
+      for config in coalesce(try(policy.connectorConfigurationsDefinition.connectorActionConfigurations, null), []) :
+      config.connectorId => config
+    }
+  }
+
+  _policy_endpoint_configurations = {
+    for name, policy in local._raw_policy_details :
+    name => {
+      for config in coalesce(try(policy.connectorConfigurationsDefinition.endpointConfigurations, null), []) :
+      config.connectorId => config
+    }
+  }
+
+  # Recreate the provider's set-based groups so iteration order and deduplication
+  # match the existing data source before serializing the generated tfvars.
+  _policy_connector_groups = {
+    for name, policy in local._raw_policy_details :
+    name => {
+      for normalized_group, api_group in {
+        business     = "Confidential"
+        non_business = "General"
+        blocked      = "Blocked"
+      } :
+      normalized_group => [
+        for connector in tolist(toset(flatten([
+          for group in policy.policyDefinition.connectorGroups : [
+            for connector in coalesce(try(group.connectors, null), []) : {
+              id = connector.id
+              default_action_rule_behavior = try(
+                coalesce(local._policy_action_configurations[name][connector.id].defaultConnectorActionRuleBehavior, ""),
+                ""
+              )
+              action_rules = [
+                for rule in coalesce(try(local._policy_action_configurations[name][connector.id].actionRules, null), []) : {
+                  action_id = rule.actionId
+                  behavior  = rule.behavior
+                }
+              ]
+              endpoint_rules = [
+                for rule in coalesce(try(local._policy_endpoint_configurations[name][connector.id].endpointRules, null), []) : {
+                  order    = rule.order
+                  endpoint = rule.endpoint
+                  behavior = rule.behavior
+                }
+              ]
+            } if group.classification == api_group
+          ]
+        ]))) :
+        {
+          id                           = connector.id
+          default_action_rule_behavior = connector.default_action_rule_behavior
+          action_rules                 = var.preserve_connector_rules ? connector.action_rules : []
+          endpoint_rules               = var.preserve_connector_rules ? connector.endpoint_rules : []
+        }
+      ]
+    }
+  }
+
+  # This is the single normalized policy projection shared by scalar and batch modes.
+  _policy_details = {
+    for name, policy in local._raw_policy_details :
+    name => {
+      display_name                      = policy.policyDefinition.displayName
+      default_connectors_classification = policy.policyDefinition.defaultConnectorsClassification
+      environment_type                  = policy.policyDefinition.environmentType
+      environments = sort([
+        for environment in tolist(toset([
+          for environment in coalesce(try(policy.policyDefinition.environments, null), []) :
+          environment.name
+        ])) :
+        lower(environment)
+      ])
+      business_connectors     = local._policy_connector_groups[name].business
+      non_business_connectors = local._policy_connector_groups[name].non_business
+      blocked_connectors      = local._policy_connector_groups[name].blocked
+      custom_connectors_patterns = [
+        for pattern in tolist(toset([
+          for rule in coalesce(try(policy.customConnectorUrlPatternsDefinition.rules, null), []) : {
+            order            = rule.order
+            host_url_pattern = rule.pattern
+            data_group = rule.customConnectorRuleClassification == "General" ? "NonBusiness" : (
+              rule.customConnectorRuleClassification == "Confidential" ? "Business" : rule.customConnectorRuleClassification
+            )
+          }
+        ])) :
+        pattern if pattern.host_url_pattern != "*"
+      ]
+      connectors_reclassified_to_blocked = [
+        for connector in local._policy_connector_groups[name].non_business :
+        connector.id if contains(local.blockable_connector_ids, connector.id)
+      ]
+    }
+  }
+
   ##############################################################################
   # SCALAR MODE
   # All scalar locals below are active only when source_policy_name is set.
-  # In batch mode (source_policy_names), source_policy_name is null, so
-  # selected_policy stays null and all downstream scalar computations are empty.
+  # In batch mode, selected_policy stays null and downstream scalar values are empty.
   ##############################################################################
 
-  # Find the target policy by exact display_name match.
-  # Guarded by null check so batch mode never triggers one() on a null input.
-  # one() returns null if no match, and errors if more than one policy shares the same name.
-  selected_policy = var.source_policy_name != null ? one([
-    for p in data.powerplatform_data_loss_prevention_policies.current.policies :
-    p if p.display_name == var.source_policy_name
-  ]) : null
+  selected_policy = var.source_policy_name != null ? lookup(local._policy_details, var.source_policy_name, null) : null
+  policy_exists   = local.selected_policy != null
 
-  policy_exists = local.selected_policy != null
-
-  # Blockable connectors in the source NonBusiness group.
-  # res-dlppolicy auto-computes the NonBusiness group from the connector catalog,
-  # reclassifying blockable connectors that are currently in NonBusiness to Blocked.
-  # coalesce guards against a future provider version returning null instead of empty set.
-  connectors_reclassified_to_blocked = local.policy_exists ? [
-    for c in coalesce(local.selected_policy.non_business_connectors, []) :
-    c.id if contains(local.blockable_connector_ids, c.id)
-  ] : []
-
-  # Business connectors, optionally stripping action_rules and endpoint_rules.
-  # Fields are projected explicitly to avoid passing extra provider attributes that
-  # res-dlppolicy's strict object type would reject.
-  # coalesce guards against a future provider version returning null instead of empty set.
-  business_connectors = local.policy_exists ? [
-    for c in coalesce(local.selected_policy.business_connectors, []) : {
-      id                           = c.id
-      default_action_rule_behavior = c.default_action_rule_behavior
-      action_rules = var.preserve_connector_rules ? [
-        for r in c.action_rules : { action_id = r.action_id, behavior = r.behavior }
-      ] : []
-      endpoint_rules = var.preserve_connector_rules ? [
-        for r in c.endpoint_rules : { order = r.order, endpoint = r.endpoint, behavior = r.behavior }
-      ] : []
-    }
-  ] : []
-
-  # Custom connector patterns with wildcard host_url_pattern removed.
-  # res-dlppolicy appends host_url_pattern = "*" automatically; its validation rejects it as user input.
-  # Fields projected explicitly — res-dlppolicy expects exactly {order, host_url_pattern, data_group}.
-  # data_group provider values ("Business", "NonBusiness", "Blocked", "Ignore") verified to match
-  # res-dlppolicy's accepted values via `terraform providers schema -json`.
-  # coalesce guards against a future provider version returning null instead of empty set.
-  custom_connectors_patterns = local.policy_exists ? [
-    for p in coalesce(local.selected_policy.custom_connectors_patterns, []) : {
-      order            = p.order
-      host_url_pattern = p.host_url_pattern
-      data_group       = p.data_group
-    }
-    if p.host_url_pattern != "*"
-  ] : []
-
-  # Environment IDs normalised to lowercase and sorted.
-  # The environments attribute is a set of strings (environment IDs), not objects.
-  # coalesce guards against a future provider version returning null instead of empty set.
-  environments_normalised = local.policy_exists ? sort([
-    for e in coalesce(local.selected_policy.environments, []) : lower(e)
-  ]) : []
+  connectors_reclassified_to_blocked = local.policy_exists ? local.selected_policy.connectors_reclassified_to_blocked : []
+  business_connectors                = local.policy_exists ? local.selected_policy.business_connectors : []
+  custom_connectors_patterns         = local.policy_exists ? local.selected_policy.custom_connectors_patterns : []
+  environments_normalised            = local.policy_exists ? local.selected_policy.environments : []
 
   # Generated .tfvars content with exactly the 6 res-dlppolicy variables.
   # Note: timestamp() causes a perpetual plan diff on tfvars_content; this is intentional
@@ -95,67 +171,21 @@ locals {
 
   ##############################################################################
   # BATCH MODE
-  # Active only when source_policy_names is set. All locals below are empty
-  # maps/lists in scalar mode (coalesce(var.source_policy_names, []) == []).
+  # Active only when source_policy_names is set.
   ##############################################################################
 
-  # Number of tenant policies whose display_name matches each requested name.
-  # 0 => not_found, 1 => found, >1 => ambiguous.
   _batch_match_counts = {
     for name in coalesce(var.source_policy_names, []) :
-    name => length([
-      for p in data.powerplatform_data_loss_prevention_policies.current.policies :
-      p if p.display_name == name
-    ])
+    name => local._requested_match_counts[name]
   }
 
-  # Matched policy objects — only for names with exactly one tenant match.
-  # one() is safe here because the filter condition guarantees exactly one element.
   _batch_policy_map = {
-    for name in coalesce(var.source_policy_names, []) :
-    name => one([
-      for p in data.powerplatform_data_loss_prevention_policies.current.policies :
-      p if p.display_name == name
-    ])
-    if lookup(local._batch_match_counts, name, 0) == 1
+    for name, match_count in local._batch_match_counts :
+    name => local._policy_details[name]
+    if match_count == 1
   }
 
-  # Per-policy transformed details — same projection/normalisation as scalar mode.
-  _batch_details = {
-    for name, policy in local._batch_policy_map :
-    name => {
-      display_name                      = policy.display_name
-      default_connectors_classification = policy.default_connectors_classification
-      environment_type                  = policy.environment_type
-      environments = sort([
-        for e in coalesce(policy.environments, []) : lower(e)
-      ])
-      business_connectors = [
-        for c in coalesce(policy.business_connectors, []) : {
-          id                           = c.id
-          default_action_rule_behavior = c.default_action_rule_behavior
-          action_rules = var.preserve_connector_rules ? [
-            for r in c.action_rules : { action_id = r.action_id, behavior = r.behavior }
-          ] : []
-          endpoint_rules = var.preserve_connector_rules ? [
-            for r in c.endpoint_rules : { order = r.order, endpoint = r.endpoint, behavior = r.behavior }
-          ] : []
-        }
-      ]
-      custom_connectors_patterns = [
-        for cp in coalesce(policy.custom_connectors_patterns, []) : {
-          order            = cp.order
-          host_url_pattern = cp.host_url_pattern
-          data_group       = cp.data_group
-        }
-        if cp.host_url_pattern != "*"
-      ]
-      connectors_reclassified_to_blocked = [
-        for c in coalesce(policy.non_business_connectors, []) :
-        c.id if contains(local.blockable_connector_ids, c.id)
-      ]
-    }
-  }
+  _batch_details = local._batch_policy_map
 
   # Generated .tfvars content per found policy (same format as scalar mode).
   # timestamp() intentionally causes perpetual diffs — see module documentation.

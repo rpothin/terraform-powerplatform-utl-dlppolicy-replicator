@@ -25,7 +25,7 @@ jobs:
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
 
       - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+        run: terraform fmt -check -recursive -diff
 
   validate:
     name: Terraform Validate
@@ -93,8 +93,12 @@ jobs:
           version: "v0.69.3"
 
   unit:
-    name: Unit Tests
+    name: Unit Tests (Power Platform ${{ matrix.provider-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        provider-version: ["4.1.0", "4.2.0"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,8 +108,16 @@ jobs:
         with:
           terraform_wrapper: false
 
+      - name: Pin Power Platform provider for compatibility test
+        env:
+          POWER_PLATFORM_PROVIDER_VERSION: ${{ matrix.provider-version }}
+        run: |
+          sed -i "s/version = \"~> 4.0\"/version = \"= ${POWER_PLATFORM_PROVIDER_VERSION}\"/" terraform.tf
+
       - name: Run Unit Tests
-        run: make test-unit
+        run: |
+          terraform init -backend=false -upgrade -input=false
+          terraform test -test-directory=tests/unit
 
   integration:
     name: Integration Tests
@@ -135,7 +147,7 @@ jobs:
   performance-benchmark:
     name: DLP Performance Benchmark
     runs-on: ubuntu-latest
-    if: vars.ENABLE_INTEGRATION_TESTS == 'true' && vars.ENABLE_INTEGRATION_PERFORMANCE_TESTS == 'true' && vars.INTEGRATION_SOURCE_POLICY_NAME != '' && vars.INTEGRATION_SOURCE_POLICY_NAME_B != ''
+    if: (github.event_name == 'workflow_dispatch' || github.event.action == 'opened') && vars.ENABLE_INTEGRATION_TESTS == 'true' && vars.ENABLE_INTEGRATION_PERFORMANCE_TESTS == 'true' && vars.INTEGRATION_SOURCE_POLICY_NAME != ''
     permissions:
       contents: read
       id-token: write
@@ -148,108 +160,113 @@ jobs:
         with:
           terraform_wrapper: false
 
-      - name: Terraform Init
-        run: terraform init -backend=false
+      - name: Prepare v0.1.3 baseline
+        run: |
+          git fetch --no-tags origin refs/tags/v0.1.3:refs/tags/v0.1.3
+          mkdir -p tests/performance/baseline
+          git archive refs/tags/v0.1.3 | tar -x -C tests/performance/baseline
+
+      - name: Initialize baseline and candidate harnesses
+        run: |
+          mkdir -p "${RUNNER_TEMP}/terraform-plugin-cache"
+          export TF_PLUGIN_CACHE_DIR="${RUNNER_TEMP}/terraform-plugin-cache"
+          terraform -chdir=tests/performance/compare/baseline init -backend=false -input=false
+          terraform -chdir=tests/performance/compare/candidate init -backend=false -input=false
+
+      - name: Compare baseline and candidate
         env:
           POWER_PLATFORM_USE_OIDC: "true"
           POWER_PLATFORM_TENANT_ID: ${{ secrets.POWER_PLATFORM_TENANT_ID }}
           POWER_PLATFORM_CLIENT_ID: ${{ secrets.POWER_PLATFORM_CLIENT_ID }}
-
-      - name: Run Performance Benchmarks
-        id: benchmark
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
+          TF_VAR_source_policy_name: ${{ vars.INTEGRATION_SOURCE_POLICY_NAME }}
         run: |
           set -euo pipefail
 
-          POLICY_A="${TF_VAR_source_policy_name_a}"
-          POLICY_B="${TF_VAR_source_policy_name_b}"
-
-          # Helper: time a terraform test invocation (nanoseconds → milliseconds).
-          # Usage: run_timed <label> <test-directory> [extra TF_VAR env assignments...]
-          # terraform test output is forwarded to stderr so it is visible in the
-          # GitHub log group; only the RESULT sentinel line goes to stdout for capture.
-          run_timed() {
+          run_timed_apply() {
             local label="$1"
-            local test_dir="$2"
-            shift 2
-            # Export any additional env vars passed as "KEY=VALUE" strings
-            for kv in "$@"; do
-              export "$kv"
-            done
-
-            local start_ns end_ns elapsed_ms exit_code=0
+            local dir="$2"
+            local start_ns end_ns elapsed_ms
             start_ns=$(date +%s%N)
-            terraform test -test-directory="$test_dir" >&2 || exit_code=$?
+            if ! terraform -chdir="$dir" apply -auto-approve -input=false -no-color > "${RUNNER_TEMP}/${label}.log" 2>&1; then
+              local diagnostic
+              diagnostic=$(grep -m 1 '^Error:' "${RUNNER_TEMP}/${label}.log" || true)
+              echo "::error::${label} Terraform apply failed. ${diagnostic:-Raw policy output is intentionally withheld from workflow logs.}"
+              return 1
+            fi
             end_ns=$(date +%s%N)
             elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
-            if [[ $exit_code -ne 0 ]]; then
-              echo "RESULT label=${label} elapsed_ms=${elapsed_ms} status=FAIL"
-              return $exit_code
-            fi
-            echo "RESULT label=${label} elapsed_ms=${elapsed_ms} status=PASS"
+            echo "${elapsed_ms}"
           }
 
-          # --- Scalar A ---
-          echo "::group::Scalar benchmark — Policy A"
-          SCALAR_A_RESULT=$(run_timed "scalar_A" "tests/performance/scalar" \
-            "TF_VAR_source_policy_name=${POLICY_A}")
-          echo "$SCALAR_A_RESULT"
+          echo "::group::Baseline v0.1.3"
+          BASELINE_MS=$(run_timed_apply "dlp-baseline" "tests/performance/compare/baseline")
+          echo "Baseline apply: ${BASELINE_MS} ms"
           echo "::endgroup::"
 
-          # --- Scalar B ---
-          echo "::group::Scalar benchmark — Policy B"
-          SCALAR_B_RESULT=$(run_timed "scalar_B" "tests/performance/scalar" \
-            "TF_VAR_source_policy_name=${POLICY_B}")
-          echo "$SCALAR_B_RESULT"
+          echo "::group::Candidate"
+          CANDIDATE_MS=$(run_timed_apply "dlp-candidate" "tests/performance/compare/candidate")
+          echo "Candidate apply: ${CANDIDATE_MS} ms"
           echo "::endgroup::"
 
-          # --- Batch A+B ---
-          echo "::group::Batch benchmark — Policy A + B"
-          BATCH_AB_RESULT=$(run_timed "batch_AB" "tests/performance/batch" \
-            "TF_VAR_source_policy_name_a=${POLICY_A}" \
-            "TF_VAR_source_policy_name_b=${POLICY_B}")
-          echo "$BATCH_AB_RESULT"
-          echo "::endgroup::"
-
-          # Parse elapsed times
-          SCALAR_A_MS=$(echo "$SCALAR_A_RESULT" | grep -oP '(?<=elapsed_ms=)\d+' || echo "N/A")
-          SCALAR_B_MS=$(echo "$SCALAR_B_RESULT" | grep -oP '(?<=elapsed_ms=)\d+' || echo "N/A")
-          BATCH_AB_MS=$(echo "$BATCH_AB_RESULT" | grep -oP '(?<=elapsed_ms=)\d+' || echo "N/A")
-
-          # Machine-readable summary to job log
-          echo ""
-          echo "=== DLP Performance Benchmark Summary ==="
-          printf "%-20s %12s %8s\n" "Invocation"        "Wall-clock ms" "Status"
-          printf "%-20s %12s %8s\n" "--------------------" "-------------" "--------"
-          printf "%-20s %12s %8s\n" "scalar_A"           "$SCALAR_A_MS"  "$(echo "$SCALAR_A_RESULT" | grep -oP '(?<=status=)\S+')"
-          printf "%-20s %12s %8s\n" "scalar_B"           "$SCALAR_B_MS"  "$(echo "$SCALAR_B_RESULT" | grep -oP '(?<=status=)\S+')"
-          printf "%-20s %12s %8s\n" "batch_AB"           "$BATCH_AB_MS"  "$(echo "$BATCH_AB_RESULT" | grep -oP '(?<=status=)\S+')"
-          echo ""
-          if [[ "$SCALAR_A_MS" != "N/A" && "$SCALAR_B_MS" != "N/A" ]]; then
-            SCALAR_TOTAL=$(( SCALAR_A_MS + SCALAR_B_MS ))
-            printf "%-20s %12s\n" "scalar_A + scalar_B" "${SCALAR_TOTAL} ms"
+          terraform -chdir=tests/performance/compare/baseline output -json snapshot > "${RUNNER_TEMP}/dlp-baseline.json"
+          terraform -chdir=tests/performance/compare/candidate output -json snapshot > "${RUNNER_TEMP}/dlp-candidate.json"
+          # The wrapper removes the "# Generated at:" line; compare all other stable outputs.
+          jq -S '.value' "${RUNNER_TEMP}/dlp-baseline.json" > "${RUNNER_TEMP}/dlp-baseline-normalized.json"
+          jq -S '.value' "${RUNNER_TEMP}/dlp-candidate.json" > "${RUNNER_TEMP}/dlp-candidate-normalized.json"
+          if ! cmp -s "${RUNNER_TEMP}/dlp-baseline-normalized.json" "${RUNNER_TEMP}/dlp-candidate-normalized.json"; then
+            echo "::error::Baseline and candidate policy outputs are not semantically identical."
+            exit 1
           fi
-          printf "%-20s %12s\n" "batch_AB"            "${BATCH_AB_MS} ms"
-          echo "========================================="
 
-          # Append to GitHub Step Summary (Markdown table)
+          BASELINE_POLICY_COUNT=$(terraform -chdir=tests/performance/compare/baseline show -json |
+            jq '[.values.root_module | .. | objects | select(.address? == "module.replicator.data.powerplatform_data_loss_prevention_policies.current") | .values.policies[]?] | length')
+          CANDIDATE_LIST_COUNT=$(terraform -chdir=tests/performance/compare/candidate state list |
+            grep -Fxc 'module.replicator.data.powerplatform_rest_query.policies_list' || true)
+          CANDIDATE_DETAIL_COUNT=$(terraform -chdir=tests/performance/compare/candidate state list |
+            grep -Fc 'module.replicator.data.powerplatform_rest_query.policy[' || true)
+          # The benchmark input is one unique policy, so the targeted path should read one detail.
+          BASELINE_POLICY_READS=$(( BASELINE_POLICY_COUNT + 1 ))
+          CANDIDATE_POLICY_READS=$(( CANDIDATE_LIST_COUNT + CANDIDATE_DETAIL_COUNT ))
+          if [[ "$CANDIDATE_LIST_COUNT" -ne 1 || "$CANDIDATE_DETAIL_COUNT" -ne 1 || "$CANDIDATE_POLICY_READS" -ge "$BASELINE_POLICY_READS" ]]; then
+            echo "::error::Unexpected policy-read shape: baseline=${BASELINE_POLICY_READS}, candidate=${CANDIDATE_POLICY_READS}, candidate_list=${CANDIDATE_LIST_COUNT}, candidate_details=${CANDIDATE_DETAIL_COUNT}."
+            exit 1
+          fi
+
+          echo "Output parity: PASS"
+          echo "Policy API reads (derived from provider data-source results): baseline=${BASELINE_POLICY_READS}, candidate=${CANDIDATE_POLICY_READS}"
           {
-            echo "## DLP Performance Benchmark"
+            echo "## Targeted DLP Read Benchmark"
             echo ""
-            echo "| Invocation | Wall-clock (ms) | Status |"
-            echo "| --- | --- | --- |"
-            echo "| scalar_A | ${SCALAR_A_MS} | $(echo "$SCALAR_A_RESULT" | grep -oP '(?<=status=)\S+') |"
-            echo "| scalar_B | ${SCALAR_B_MS} | $(echo "$SCALAR_B_RESULT" | grep -oP '(?<=status=)\S+') |"
-            echo "| batch_AB | ${BATCH_AB_MS} | $(echo "$BATCH_AB_RESULT" | grep -oP '(?<=status=)\S+') |"
+            echo "| Version | Apply time (ms) |"
+            echo "| --- | ---: |"
+            echo "| Baseline v0.1.3 | ${BASELINE_MS} |"
+            echo "| Candidate | ${CANDIDATE_MS} |"
             echo ""
-            echo "> [!NOTE]"
-            echo "> **Interpretation:** wall-clock time measured at the Terraform CLI level."
-            echo "> Compare \`scalar_A + scalar_B\` total against \`batch_AB\` measured in the same run"
-            echo "> (same runner, tenant, and time window) for a meaningful scalar vs. batch comparison."
-            echo "> Do not compare results across different runners, tenants, or times."
+            echo "Output parity: **PASS**"
+            echo ""
+            echo "| Policy API reads (provider data-source result shape) | Count |"
+            echo "| --- | ---: |"
+            echo "| Baseline v0.1.3 | ${BASELINE_POLICY_READS} |"
+            echo "| Candidate | ${CANDIDATE_POLICY_READS} |"
+            echo ""
+            echo "Timings are informational only; no runtime threshold is enforced. This is one baseline/candidate pair in the testing tenant. Repeat only if the result appears anomalous."
           } >> "$GITHUB_STEP_SUMMARY"
-        env:
-          POWER_PLATFORM_USE_OIDC: "true"
-          POWER_PLATFORM_TENANT_ID: ${{ secrets.POWER_PLATFORM_TENANT_ID }}
-          POWER_PLATFORM_CLIENT_ID: ${{ secrets.POWER_PLATFORM_CLIENT_ID }}
-          TF_VAR_source_policy_name_a: ${{ vars.INTEGRATION_SOURCE_POLICY_NAME }}
-          TF_VAR_source_policy_name_b: ${{ vars.INTEGRATION_SOURCE_POLICY_NAME_B }}
+
+      - name: Remove benchmark state and generated policy files
+        if: always()
+        run: |
+          rm -f \
+            tests/performance/compare/baseline/terraform.tfstate \
+            tests/performance/compare/baseline/terraform.tfstate.backup \
+            tests/performance/compare/baseline/benchmark-generated.tfvars \
+            tests/performance/compare/candidate/terraform.tfstate \
+            tests/performance/compare/candidate/terraform.tfstate.backup \
+            tests/performance/compare/candidate/benchmark-generated.tfvars
+          rm -f \
+            "${RUNNER_TEMP}/dlp-baseline.log" \
+            "${RUNNER_TEMP}/dlp-candidate.log" \
+            "${RUNNER_TEMP}/dlp-baseline.json" \
+            "${RUNNER_TEMP}/dlp-candidate.json" \
+            "${RUNNER_TEMP}/dlp-baseline-normalized.json" \
+            "${RUNNER_TEMP}/dlp-candidate-normalized.json"

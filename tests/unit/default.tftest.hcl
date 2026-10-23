@@ -1,18 +1,15 @@
 # Unit tests — uses mock providers, no credentials required.
 # Mock data structures are derived from the real provider schema (microsoft/power-platform ~> 4.0).
 #
-# MOCK LIMITATION:
-# The `powerplatform_data_loss_prevention_policies` and `powerplatform_connectors` data sources
-# use `nested_type` attributes with `nesting_mode: list`. Terraform's mock provider framework
-# (v1.14.x) cannot populate these attributes via override_data or mock_data defaults — any attempt
-# to supply list literals results in "incompatible types; expected object type, found tuple" errors,
-# and object literals are silently ignored. The mock auto-generates empty lists.
-#
-# Consequence: unit tests can only exercise the "policy not found" / empty-data code paths and
-# variable validation.  All positive-path logic (policy found, connector reclassification,
-# wildcard stripping, environment normalisation) is covered by tests/integration/default.tftest.hcl.
-
-mock_provider "powerplatform" {}
+mock_provider "powerplatform" {
+  mock_data "powerplatform_rest_query" {
+    defaults = {
+      output = {
+        body = jsonencode({ value = [] })
+      }
+    }
+  }
+}
 
 mock_provider "local" {}
 
@@ -288,20 +285,6 @@ run "output_file_default_value" {
 
 ###############################################################################
 # Tests 17–20: Additional output-null guards and variable reflection tests
-#
-# MOCK FRAMEWORK LIMITATION (Terraform v1.14.x):
-# The nested_type attributes with nesting_mode:list (policies, connectors) and
-# nesting_mode:set (business_connectors, etc.) cannot be populated through
-# override_data or mock_data defaults — any tuple literal produces
-# "incompatible types; expected object type, found tuple" and tolist/toset
-# coercions are not evaluated before the type check. The mock auto-generates
-# empty lists, so all tests below verify module behaviour with empty nested
-# collections (policy not found / no connectors), which is equivalent to a
-# policy that exists with no connectors or environments.
-#
-# Positive-path transformation logic (connector projection, wildcard stripping,
-# environment normalisation, reclassification detection) is covered by
-# tests/integration/default.tftest.hcl using real provider calls.
 ###############################################################################
 
 ###############################################################################
@@ -615,6 +598,35 @@ run "batch_file_paths_empty_when_no_policies_found" {
 }
 
 ###############################################################################
+# BAPI endpoint input validation
+###############################################################################
+run "rejects_bapi_host_with_scheme" {
+  command = plan
+
+  variables {
+    source_policy_name = "My DLP Policy"
+    bapi_host          = "https://api.bap.microsoft.com"
+  }
+
+  expect_failures = [
+    var.bapi_host,
+  ]
+}
+
+run "rejects_blank_bapi_scope" {
+  command = plan
+
+  variables {
+    source_policy_name = "My DLP Policy"
+    bapi_scope         = "  "
+  }
+
+  expect_failures = [
+    var.bapi_scope,
+  ]
+}
+
+###############################################################################
 # Test 35: Rejects output_files with non-.tfvars extension
 ###############################################################################
 run "rejects_output_files_non_tfvars_extension" {
@@ -754,4 +766,3 @@ run "rejects_whitespace_only_source_policy_name" {
     var.source_policy_name,
   ]
 }
-

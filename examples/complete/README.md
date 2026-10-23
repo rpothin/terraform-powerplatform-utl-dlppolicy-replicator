@@ -14,7 +14,8 @@ and an `output_files` map to control where each generated `.tfvars` file is writ
 - Result keys are the exact requested strings — no sanitisation that could collide. State addresses are therefore stable when you add or remove names from the batch.
 - The same `timestamp()` perpetual-diff behaviour as scalar mode applies: each plan shows diffs on `tfvars_content` and `migration_summary.generation_timestamp`.
 
-> **Note:** Replace the default `source_policy_names` values with the exact display names of existing DLP policies in your tenant, otherwise their status will be `not_found` and no `.tfvars` files will be written.
+> [!NOTE]
+> Replace the default `source_policy_names` values with the exact display names of existing DLP policies in your tenant, otherwise their status will be `not_found` and no `.tfvars` files will be written.
 
 <!-- markdownlint-disable MD033 -->
 ## Requirements
@@ -39,6 +40,22 @@ No required inputs.
 ## Optional Inputs
 
 The following input variables are optional (have default values):
+
+### <a name="input_bapi_host"></a> [bapi\_host](#input\_bapi\_host)
+
+Description: Hostname for Power Platform Business API requests.
+
+Type: `string`
+
+Default: `"api.bap.microsoft.com"`
+
+### <a name="input_bapi_scope"></a> [bapi\_scope](#input\_bapi\_scope)
+
+Description: OAuth scope for Power Platform Business API requests.
+
+Type: `string`
+
+Default: `"https://service.powerapps.com/.default"`
 
 ### <a name="input_output_files"></a> [output\_files](#input\_output\_files)
 

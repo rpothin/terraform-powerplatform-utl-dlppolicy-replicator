@@ -18,3 +18,15 @@ variable "preserve_connector_rules" {
   type        = bool
   default     = false
 }
+
+variable "bapi_host" {
+  description = "Hostname for Power Platform Business API requests."
+  type        = string
+  default     = "api.bap.microsoft.com"
+}
+
+variable "bapi_scope" {
+  description = "OAuth scope for Power Platform Business API requests."
+  type        = string
+  default     = "https://service.powerapps.com/.default"
+}
