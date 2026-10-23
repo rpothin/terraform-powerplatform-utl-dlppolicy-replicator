@@ -25,7 +25,7 @@ jobs:
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
 
       - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+        run: terraform fmt -check -recursive -diff
 
   validate:
     name: Terraform Validate
@@ -112,16 +112,7 @@ jobs:
         env:
           POWER_PLATFORM_PROVIDER_VERSION: ${{ matrix.provider-version }}
         run: |
-          cat > provider-version.tf <<EOF
-          terraform {
-            required_providers {
-              powerplatform = {
-                source  = "microsoft/power-platform"
-                version = "= ${POWER_PLATFORM_PROVIDER_VERSION}"
-              }
-            }
-          }
-          EOF
+          sed -i "s/version = \"~> 4.0\"/version = \"= ${POWER_PLATFORM_PROVIDER_VERSION}\"/" terraform.tf
 
       - name: Run Unit Tests
         run: |
