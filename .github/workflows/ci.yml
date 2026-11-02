@@ -98,7 +98,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        provider-version: ["4.1.0", "4.2.0"]
+        provider-version: ["4.1.0", "4.2.0", "4.2.1"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,7 +122,7 @@ jobs:
   integration:
     name: Integration Tests
     runs-on: ubuntu-latest
-    if: vars.ENABLE_INTEGRATION_TESTS == 'true'
+    if: vars.ENABLE_INTEGRATION_TESTS == 'true' && github.actor != 'dependabot[bot]'
     permissions:
       contents: read
       id-token: write
@@ -147,7 +147,7 @@ jobs:
   performance-benchmark:
     name: DLP Performance Benchmark
     runs-on: ubuntu-latest
-    if: (github.event_name == 'workflow_dispatch' || github.event.action == 'opened') && vars.ENABLE_INTEGRATION_TESTS == 'true' && vars.ENABLE_INTEGRATION_PERFORMANCE_TESTS == 'true' && vars.INTEGRATION_SOURCE_POLICY_NAME != ''
+    if: (github.event_name == 'workflow_dispatch' || github.event.action == 'opened') && vars.ENABLE_INTEGRATION_TESTS == 'true' && vars.ENABLE_INTEGRATION_PERFORMANCE_TESTS == 'true' && vars.INTEGRATION_SOURCE_POLICY_NAME != '' && github.actor != 'dependabot[bot]'
     permissions:
       contents: read
       id-token: write
